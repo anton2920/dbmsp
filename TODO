@@ -1,0 +1,5 @@
+- Bloom filter for Has().
+- LRU cache for reads.
+- Indirect format:
+	1 | int63 - offset into file?
+	1 | uint16 | uint16 | uint31 - size (in power of 2) + bank number + offset?
