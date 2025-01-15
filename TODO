@@ -1,5 +1,5 @@
 - Bloom filter for Has().
 - LRU cache for reads.
-- Indirect format:
-	1 | int63 - offset into file?
-	1 | uint16 | uint16 | uint31 - size (in power of 2) + bank number + offset?
+- Ability to store fixed-size 8 byte int63s, variable-sized in-place data and variable-sized blob data.
+- All Bplus functions as implicit Tx wrappers for single operations.
+- Support batching.

@@ -55,17 +55,15 @@ case $1 in
 	'' | debug)
 		CGO_ENABLED=1; export CGO_ENABLED
 		for file in `ls *.c`; do
-			run go tool 6c -F -w -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
+			run go tool 6c -N -F -w -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
 		done
-		for file in `ls *.go`; do
-			run go tool 6g $file
-		done
-		run go tool pack c $PROJECT.a *.6
+		run go tool 6g -N -pack -o $PROJECT.a *.go
+		run go tool pack r $PROJECT.a *.6
 		run go tool 6l -o $PROJECT $PROJECT.a
 		;;
 	clean)
 		run rm -f $PROJECT $PROJECT.a $PROJECT.s $PROJECT.esc $PROJECT.test c.out cpu.pprof mem.pprof *.6
-		run go clean -cache -modcache -testcache
+		run go clean
 		run rm -rf `go env GOCACHE`
 		run rm -rf /tmp/cover*
 		;;
