@@ -1,5 +1,13 @@
-- Bloom filter for Has().
-- LRU cache for reads.
-- Ability to store fixed-size 8 byte int63s, variable-sized in-place data and variable-sized blob data.
-- All Bplus functions as implicit Tx wrappers for single operations.
-- Support batching.
+Now;
+	- Better error messages.
+
+Later:
+	- All Bplus functions as implicit Tx wrappers for single operations.
+	- Ability to store fixed-size 8 byte int63s, variable-sized in-place data and variable-sized blob data.
+	- Support batching.
+
+Before release:
+	- Snapshots.
+	- Freelist.
+	- Bloom filter for Has().
+	- LRU cache for reads.

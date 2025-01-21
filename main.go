@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -16,7 +17,8 @@ var (
 	DeleleKeys = [...]int{25, 45, 24, 38, 32, 8, 27, 46, 13, 42, 5, 22, 18, 26, 7, 35, 15}
 )
 
-func Int2Slice(int) []byte
+func Int2Slice(*int) []byte
+func Slice2Int([]byte) int
 
 func main() {
 	CallC(Main)
@@ -25,12 +27,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open Bplus tree: %v", err)
 	}
+	_ = t
 
 	println("INSERT 1!!!")
+	var value int
+	_ = value
 	for _, key := range InsertKeys {
-		// fmt.Println("I:", key)
-		t.Set(Int2Slice(key), Int2Slice(0))
-		//fmt.Println(t)
+		fmt.Println("I:", key)
+		t.Set(Int2Slice(&key), Int2Slice(&value))
+		fmt.Println(t)
 	}
 	// fmt.Println(t)
 }

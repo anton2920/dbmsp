@@ -55,7 +55,7 @@ case $1 in
 	'' | debug)
 		CGO_ENABLED=1; export CGO_ENABLED
 		for file in `ls *.c`; do
-			run go tool 6c -N -F -w -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
+			run go tool 6c -N -F -w -D DEBUG -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
 		done
 		run go tool 6g -N -pack -o $PROJECT.a *.go
 		run go tool pack r $PROJECT.a *.6

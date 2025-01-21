@@ -26,17 +26,13 @@ typedef struct Page Page;
 
 struct BplusHeader {
 	uint64 Version;
+	int64 NextOffset;
 
 	int64 Root;
-	int64 Blobs;
-	int64 FreeList;
-	int64 Snapshots;
 
 	/* Sentinel elements for doubly-linked list of leaves, used for iterators. */
 	int64 EndSentinel;
 	int64 RendSentinel;
-
-	int64 NextOffset;
 };
 
 struct Bplus {
@@ -97,12 +93,12 @@ struct Page {
 
 #pragma textflag NOSPLIT
 Slice
-main·Int2Slice(intgo x)
+main·Int2Slice(intgo *x)
 {
 	Slice s;
 
-	s.array = (byte * ) & x;
-	s.len = s.cap = sizeof(x);
+	s.array = (byte * )x;
+	s.len = s.cap = sizeof(*x);
 
 	return s;
 }
@@ -112,55 +108,31 @@ main·Int2Slice(intgo x)
 intgo
 main·Slice2Int(Slice s)
 {
+	assert(s.len == sizeof(intgo));
 	return * (intgo * )s.array;
 }
 
 
 #pragma textflag NOSPLIT
-int64
-main·BplusGetEndSentinel(Bplus *t)
+Slice
+main·Page2Slice(Page *page)
 {
-	return t->Header.EndSentinel;
+	Slice s;
+
+	s.array = (byte * ) page;
+	s.len = s.cap = 1;
+
+	return s;
 }
 
 
 #pragma textflag NOSPLIT
-int64
-main·BplusGetRendSentinel(Bplus *t)
+Slice
+main·Pages2Bytes(Slice s)
 {
-	return t->Header.RendSentinel;
-}
-
-
-#pragma textflag NOSPLIT
-int64
-main·BplusGetRootOffset(Bplus *t)
-{
-	return t->Header.Root;
-}
-
-
-#pragma textflag NOSPLIT
-void
-main·BplusSetEndSentinel(Bplus *t, int64 offset)
-{
-	t->Header.EndSentinel = offset;
-}
-
-
-#pragma textflag NOSPLIT
-void
-main·BplusSetRendSentinel(Bplus *t, int64 offset)
-{
-	t->Header.RendSentinel = offset;
-}
-
-
-#pragma textflag NOSPLIT
-void
-main·BplusSetRootOffset(Bplus *t, int64 offset)
-{
-	t->Header.Root = offset;
+	s.len *= PageSize;
+	s.cap *= PageSize;
+	return s;
 }
 
 
@@ -192,31 +164,113 @@ main·BplusPageInit(Page *p, uint8 type, intgo n)
 
 #pragma textflag NOSPLIT
 int64
-main·BplusNodeGetChildAt(Page *p, intgo index)
+main·BplusMetaGetEndSentinel(Bplus *t)
 {
-	assert(p->Header.Type == BplusPageTypeNode);
-	if (index == -1)
-		return p->Body.Node.ChildPage0;
-	return p->Body.Node.Children[index];
-}
-
-
-/* TODO(anton2920): add support for variable length keys. */
-#pragma textflag NOSPLIT
-Slice
-main·BplusNodeGetKeyAt(Page *p, intgo index)
-{
-	assert(p->Header.Type == BplusPageTypeNode);
-	return main·Int2Slice(p->Body.Node.Keys[index]);
+	return t->Header.EndSentinel;
 }
 
 
 #pragma textflag NOSPLIT
-intgo
-main·BplusNodeGetNchildren(Page *p)
+int64
+main·BplusMetaGetNextOffset(Bplus *t)
 {
-	assert(p->Header.Type == BplusPageTypeNode);
-	return p->Header.N.Children;
+	return t->Header.NextOffset;
+}
+
+
+#pragma textflag NOSPLIT
+int64
+main·BplusMetaGetRendSentinel(Bplus *t)
+{
+	return t->Header.RendSentinel;
+}
+
+
+#pragma textflag NOSPLIT
+int64
+main·BplusMetaGetRoot(Bplus *t)
+{
+	return t->Header.Root;
+}
+
+
+#pragma textflag NOSPLIT
+uint64
+main·BplusMetaGetVersion(Bplus *t)
+{
+	return t->Header.Version;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusMetaSetEndSentinel(Bplus *t, int64 offset)
+{
+	t->Header.EndSentinel = offset;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusMetaSetNextOffset(Bplus *t, int64 offset)
+{
+	t->Header.NextOffset = offset;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusMetaSetRendSentinel(Bplus *t, int64 offset)
+{
+	t->Header.RendSentinel = offset;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusMetaSetRoot(Bplus *t, int64 offset)
+{
+	t->Header.Root = offset;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusMetaSetVersion(Bplus *t, uint64 version)
+{
+	t->Header.Version = version;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusNodeCopyChildren(Page *dst, Page *src, intgo from, intgo to)
+{
+	assert(dst->Header.Type == BplusPageTypeNode);
+	assert(src->Header.Type == BplusPageTypeNode);
+
+	to = (to == -1) ? src->Header.N.Children : to;
+	assert(from < to);
+	assert(from < src->Header.N.Children);
+	assert(to <= src->Header.N.Children);
+
+	runtime·memmove(dst->Body.Node.Children, &src->Body.Node.Children[from], (to - from) * sizeof(src->Body.Node.Children[0]));
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusNodeCopyKeys(Page *dst, Page *src, intgo from, intgo to)
+{
+	assert(dst->Header.Type == BplusPageTypeNode);
+	assert(src->Header.Type == BplusPageTypeNode);
+
+	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	assert(from < to);
+	assert(from < src->Header.N.Children - 1);
+	assert(to <= src->Header.N.Children - 1);
+
+	runtime·memmove(dst->Body.Node.Keys, &src->Body.Node.Keys[from], (to - from) * sizeof(src->Body.Node.Keys[0]));
 }
 
 
@@ -244,43 +298,125 @@ main·BplusNodeFind(Page *p, Slice key)
 
 
 #pragma textflag NOSPLIT
-void
-main·BplusNodeSetChildAt(Page *p, int64 child, intgo index)
+int64
+main·BplusNodeGetChildAt(Page *p, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeNode);
 	if (index == -1)
-		p->Body.Node.ChildPage0 = child;
-	else
-		p->Body.Node.Children[index] = child;
+		return p->Body.Node.ChildPage0;
+	return p->Body.Node.Children[index];
 }
 
 
 /* TODO(anton2920): add support for variable length keys. */
 #pragma textflag NOSPLIT
 Slice
-main·BplusLeafGetKeyAt(Page *p, intgo index)
+main·BplusNodeGetKeyAt(Page *p, intgo index)
 {
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	return main·Int2Slice(p->Body.Leaf.Keys[index]);
-}
-
-
-/* TODO(anton2920): add support for variable length values. */
-#pragma textflag NOSPLIT
-Slice
-main·BplusLeafGetValueAt(Page *p, intgo index)
-{
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	return main·Int2Slice(p->Body.Leaf.Values[index]);
+	assert(p->Header.Type == BplusPageTypeNode);
+	return main·Int2Slice((int64 * ) & p->Body.Node.Keys[index]);
 }
 
 
 #pragma textflag NOSPLIT
 intgo
-main·BplusLeafGetNvalues(Page *p)
+main·BplusNodeGetNchildren(Page *p)
 {
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	return p->Header.N.Values;
+	assert(p->Header.Type == BplusPageTypeNode);
+	return p->Header.N.Children;
+}
+
+
+void
+main·BplusNodeInsertChildAt(Page *p, int64 child, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeNode);
+	assert(p->Header.N.Children < BplusOrder - 2);
+
+	if (index == -1) {
+		runtime·memmove(&p->Body.Node.Children[1], &p->Body.Node.Children[0], p->Header.N.Children - 1);
+		p->Body.Node.Children[0] = p->Body.Node.ChildPage0;
+		p->Body.Node.ChildPage0 = child;
+	} else {
+		runtime·memmove(&p->Body.Node.Children[index+1], &p->Body.Node.Children[index], (p->Header.N.Children - 1 - index) * sizeof(p->Body.Node.Children[0]));
+		p->Body.Node.Children[index] = child;
+	}
+
+	++p->Header.N.Children;
+}
+
+
+void
+main·BplusNodeInsertKeyAt(Page *p, Slice key, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeNode);
+	assert(p->Header.N.Children < BplusOrder - 2);
+
+	runtime·memmove(&p->Body.Node.Keys[index+1], &p->Body.Node.Keys[index], (p->Header.N.Children - 1 - index) * sizeof(p->Body.Node.Keys[0]));
+	p->Body.Node.Keys[index] = main·Slice2Int(key);
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusNodeSetChildAt(Page *p, int64 child, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeNode);
+	if (index == -1) {
+		p->Body.Node.ChildPage0 = child;
+	} else {
+		p->Body.Node.Children[index] = child;
+	}
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusNodeSetKeyAt(Page *p, Slice key, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeNode);
+	p->Body.Node.Keys[index] = main·Slice2Int(key);
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusNodeSetNchildren(Page *p, intgo nchilren)
+{
+	assert(p->Header.Type == BplusPageTypeNode);
+	p->Header.N.Children = nchilren;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusLeafCopyKeys(Page *dst, Page *src, intgo from, intgo to)
+{
+	assert(dst->Header.Type == BplusPageTypeLeaf);
+	assert(src->Header.Type == BplusPageTypeLeaf);
+
+	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	assert(from < to);
+	assert(from < src->Header.N.Children - 1);
+	assert(to <= src->Header.N.Children - 1);
+
+	runtime·memmove(dst->Body.Leaf.Keys, &src->Body.Leaf.Keys[from], (to - from) * sizeof(src->Body.Leaf.Keys[0]));
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusLeafCopyValues(Page *dst, Page *src, intgo from, intgo to)
+{
+	assert(dst->Header.Type == BplusPageTypeLeaf);
+	assert(src->Header.Type == BplusPageTypeLeaf);
+
+	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	assert(from < to);
+	assert(from < src->Header.N.Children - 1);
+	assert(to <= src->Header.N.Children - 1);
+
+	runtime·memmove(dst->Body.Leaf.Values, &src->Body.Leaf.Values[from], (to - from) * sizeof(src->Body.Leaf.Values[0]));
 }
 
 
@@ -323,6 +459,79 @@ main·BplusLeafFind(Page *p, Slice key)
 
 /* TODO(anton2920): add support for variable length keys. */
 #pragma textflag NOSPLIT
+Slice
+main·BplusLeafGetKeyAt(Page *p, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	return main·Int2Slice((int64 * ) & p->Body.Leaf.Keys[index]);
+}
+
+
+#pragma textflag NOSPLIT
+int64
+main·BplusLeafGetNext(Page *p)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	return p->Body.Leaf.Next;
+}
+
+
+#pragma textflag NOSPLIT
+intgo
+main·BplusLeafGetNvalues(Page *p)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	return p->Header.N.Values;
+}
+
+
+#pragma textflag NOSPLIT
+int64
+main·BplusLeafGetPrev(Page *p)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	return p->Body.Leaf.Prev;
+}
+
+
+/* TODO(anton2920): add support for variable length values. */
+#pragma textflag NOSPLIT
+Slice
+main·BplusLeafGetValueAt(Page *p, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	return main·Int2Slice((int64 * )p->Body.Leaf.Values[index]);
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusLeafInsertKeyAt(Page *p, Slice key, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	assert(p->Header.N.Values < BplusOrder - 1);
+
+	runtime·memmove(&p->Body.Leaf.Keys[index+1], &p->Body.Leaf.Keys[index], (p->Header.N.Values - index) * sizeof(p->Body.Leaf.Keys[0]));
+	p->Body.Leaf.Keys[index] = main·Slice2Int(key);
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusLeafInsertValueAt(Page *p, Slice value, intgo index)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	assert(p->Header.N.Values < BplusOrder - 1);
+
+	runtime·memmove(&p->Body.Leaf.Values[index+1], &p->Body.Leaf.Values[index], (p->Header.N.Values - index) * sizeof(p->Body.Leaf.Values[0]));
+	p->Body.Leaf.Values[index] = main·Slice2Int(value);
+
+	++p->Header.N.Values;
+}
+
+
+/* TODO(anton2920): add support for variable length keys. */
+#pragma textflag NOSPLIT
 void
 main·BplusLeafSetKeyAt(Page *p, Slice key, intgo index)
 {
@@ -346,6 +555,15 @@ main·BplusLeafSetPrev(Page *p, int64 prev)
 {
 	assert(p->Header.Type == BplusPageTypeLeaf);
 	p->Body.Leaf.Prev = prev;
+}
+
+
+#pragma textflag NOSPLIT
+void
+main·BplusLeafSetNvalues(Page *p, intgo nvalues)
+{
+	assert(p->Header.Type == BplusPageTypeLeaf);
+	p->Header.N.Values = nvalues;
 }
 
 
