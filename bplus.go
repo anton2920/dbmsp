@@ -105,6 +105,8 @@ func Page2Slice(*Page) []Page
 func Pages2Bytes([]Page) []byte
 
 func ReadPagesAt(f *os.File, pages []Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
 	if _, err := f.ReadAt(Pages2Bytes(pages), offset); (err != nil) && (err != io.EOF) {
 		return fmt.Errorf("failed to read %d pages at %d: %v", len(pages), offset, err)
 	}
@@ -112,10 +114,14 @@ func ReadPagesAt(f *os.File, pages []Page, offset int64) error {
 }
 
 func WritePagesAt(f *os.File, pages []Page, offset int64, sync bool) error {
+	defer trace.End(trace.Begin(""))
+
 	if _, err := f.WriteAt(Pages2Bytes(pages), offset); err != nil {
 		return fmt.Errorf("failed to write %d pages at %d: %v", len(pages), offset, err)
 	}
 	if sync {
+		defer trace.End(trace.Begin("main.WritePagesAt.Sync"))
+
 		if err := f.Sync(); err != nil {
 			return fmt.Errorf("failed to sync writes to disk: %v", err)
 		}
@@ -282,6 +288,8 @@ func transformOffset(offset int64, startOffset int64) int64 {
 }
 
 func (tx *BplusTx) Commit() error {
+	defer trace.End(trace.Begin(""))
+
 	tx.Tree.Lock()
 	defer tx.Tree.Unlock()
 
