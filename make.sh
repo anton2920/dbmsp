@@ -35,6 +35,9 @@ check_db_variable()
 	fi
 }
 
+# Switch to Go 1.4.4
+. go14-env
+
 # NOTE(anton2920): don't like Google spying on me.
 GOPROXY=direct; export GOPROXY
 GOSUMDB=off; export GOSUMDB
@@ -45,21 +48,24 @@ GOPATH=`go env GOPATH`:`pwd`; export GOPATH
 
 CGO_ENABLED=0; export CGO_ENABLED
 
-# Switch to Go 1.4.4
-. go14-env
-
-
 STARTTIME=`date +%s`
 
 case $1 in
 	'' | debug)
 		CGO_ENABLED=1; export CGO_ENABLED
+		PKGPATH=$HOME/go/pkg/freebsd_amd64_race
+
+		for pkg in `echo intel trace`; do
+			run go install -a -gcflags="-N -l"  -race -tags gofadebug github.com/anton2920/gofa/$pkg
+		done
+
 		for file in `ls *.c`; do
 			run go tool 6c -N -F -w -D DEBUG -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
 		done
-		run go tool 6g -N -pack -o $PROJECT.a *.go
+
+		run go tool 6g -N -l -race -pack -I $PKGPATH -o $PROJECT.a *.go
 		run go tool pack r $PROJECT.a *.6
-		run go tool 6l -o $PROJECT $PROJECT.a
+		run go tool 6l -race -L $PKGPATH -o $PROJECT $PROJECT.a
 		;;
 	clean)
 		run rm -f $PROJECT $PROJECT.a $PROJECT.s $PROJECT.esc $PROJECT.test c.out cpu.pprof mem.pprof *.6
@@ -143,7 +149,18 @@ case $1 in
 		run go build $VERBOSITYFLAGS -o $PROJECT -ldflags="-X main.BuildMode=Profiling"
 		;;
 	release)
-		run go build $VERBOSITYFLAGS -o $PROJECT -ldflags="-s -w"
+		PKGPATH=$HOME/go/pkg/freebsd_amd64
+		for pkg in `echo intel trace`; do
+			run go install -a github.com/anton2920/gofa/$pkg
+		done
+
+		for file in `ls *.c`; do
+			run go tool 6c -F -w -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
+		done
+
+		run go tool 6g -pack -I $PKGPATH -o $PROJECT.a *.go
+		run go tool pack r $PROJECT.a *.6
+		run go tool 6l -s -w -L $PKGPATH -o $PROJECT $PROJECT.a
 		;;
 	test)
 		run $0 $VERBOSITYFLAGS vet
@@ -164,7 +181,19 @@ case $1 in
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -tags gofatrace
 		;;
 	tracing)
-		run go build $VERBOSITYFLAGS -o $PROJECT -ldflags="-X main.BuildMode=Tracing" -tags gofatrace
+		PKGPATH=$HOME/go/pkg/freebsd_amd64
+
+		for pkg in `echo intel trace`; do
+			run go install -a  -tags gofatrace github.com/anton2920/gofa/$pkg
+		done
+
+		for file in `ls *.c`; do
+			run go tool 6c -F -w -I $HOME/go14/src/runtime -I $HOME/go14/src/cmd/ld $file
+		done
+
+		run go tool 6g -pack -I $PKGPATH -o $PROJECT.a *.go
+		run go tool pack r $PROJECT.a *.6
+		run go tool 6l -s -w -L $PKGPATH -o $PROJECT $PROJECT.a
 		;;
 	vet)
 		run go vet $VERBOSITYFLAGS
