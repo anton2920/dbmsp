@@ -91,18 +91,7 @@ struct Page {
 };
 
 
-#pragma textflag NOSPLIT
-Slice
-main·Int2Slice(intgo *x)
-{
-	Slice s;
-
-	s.array = (byte * )x;
-	s.len = s.cap = sizeof(*x);
-
-	return s;
-}
-
+Slice	main·Int2Slice(intgo);
 
 #pragma textflag NOSPLIT
 intgo
@@ -251,6 +240,7 @@ main·BplusNodeCopyChildren(Page *dst, Page *src, intgo from, intgo to)
 
 	to = (to == -1) ? src->Header.N.Children : to;
 	assert(from < to);
+	assert(from > -1);
 	assert(from < src->Header.N.Children);
 	assert(to <= src->Header.N.Children);
 
@@ -265,10 +255,10 @@ main·BplusNodeCopyKeys(Page *dst, Page *src, intgo from, intgo to)
 	assert(dst->Header.Type == BplusPageTypeNode);
 	assert(src->Header.Type == BplusPageTypeNode);
 
-	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	to = (to == -1) ? src->Header.N.Children : to;
 	assert(from < to);
-	assert(from < src->Header.N.Children - 1);
-	assert(to <= src->Header.N.Children - 1);
+	assert(from < src->Header.N.Children);
+	assert(to <= src->Header.N.Children);
 
 	runtime·memmove(dst->Body.Node.Keys, &src->Body.Node.Keys[from], (to - from) * sizeof(src->Body.Node.Keys[0]));
 }
@@ -280,7 +270,7 @@ main·BplusNodeFind(Page *p, Slice key)
 {
 	assert(p->Header.Type == BplusPageTypeNode);
 
-	intgo nkeys = p->Header.N.Children - 1;
+	intgo nkeys = p->Header.N.Children;
 	uint64 k = *((uint64 * )key.array);
 	Node * n = &p->Body.Node;
 	intgo i;
@@ -314,7 +304,7 @@ Slice
 main·BplusNodeGetKeyAt(Page *p, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeNode);
-	return main·Int2Slice((int64 * ) & p->Body.Node.Keys[index]);
+	return main·Int2Slice(p->Body.Node.Keys[index]);
 }
 
 
@@ -327,6 +317,7 @@ main·BplusNodeGetNchildren(Page *p)
 }
 
 
+#pragma textflag NOSPLIT
 void
 main·BplusNodeInsertChildAt(Page *p, int64 child, intgo index)
 {
@@ -338,7 +329,7 @@ main·BplusNodeInsertChildAt(Page *p, int64 child, intgo index)
 		p->Body.Node.Children[0] = p->Body.Node.ChildPage0;
 		p->Body.Node.ChildPage0 = child;
 	} else {
-		runtime·memmove(&p->Body.Node.Children[index+1], &p->Body.Node.Children[index], (p->Header.N.Children - 1 - index) * sizeof(p->Body.Node.Children[0]));
+		runtime·memmove(&p->Body.Node.Children[index+1], &p->Body.Node.Children[index], (p->Header.N.Children - index) * sizeof(p->Body.Node.Children[0]));
 		p->Body.Node.Children[index] = child;
 	}
 
@@ -346,13 +337,14 @@ main·BplusNodeInsertChildAt(Page *p, int64 child, intgo index)
 }
 
 
+#pragma textflag NOSPLIT
 void
 main·BplusNodeInsertKeyAt(Page *p, Slice key, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeNode);
 	assert(p->Header.N.Children < BplusOrder - 2);
 
-	runtime·memmove(&p->Body.Node.Keys[index+1], &p->Body.Node.Keys[index], (p->Header.N.Children - 1 - index) * sizeof(p->Body.Node.Keys[0]));
+	runtime·memmove(&p->Body.Node.Keys[index+1], &p->Body.Node.Keys[index], (p->Header.N.Children - index) * sizeof(p->Body.Node.Keys[0]));
 	p->Body.Node.Keys[index] = main·Slice2Int(key);
 }
 
@@ -395,10 +387,10 @@ main·BplusLeafCopyKeys(Page *dst, Page *src, intgo from, intgo to)
 	assert(dst->Header.Type == BplusPageTypeLeaf);
 	assert(src->Header.Type == BplusPageTypeLeaf);
 
-	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	to = (to == -1) ? src->Header.N.Values : to;
 	assert(from < to);
-	assert(from < src->Header.N.Children - 1);
-	assert(to <= src->Header.N.Children - 1);
+	assert(from < src->Header.N.Values);
+	assert(to <= src->Header.N.Values);
 
 	runtime·memmove(dst->Body.Leaf.Keys, &src->Body.Leaf.Keys[from], (to - from) * sizeof(src->Body.Leaf.Keys[0]));
 }
@@ -411,10 +403,10 @@ main·BplusLeafCopyValues(Page *dst, Page *src, intgo from, intgo to)
 	assert(dst->Header.Type == BplusPageTypeLeaf);
 	assert(src->Header.Type == BplusPageTypeLeaf);
 
-	to = (to == -1) ? src->Header.N.Children - 1 : to;
+	to = (to == -1) ? src->Header.N.Values : to;
 	assert(from < to);
-	assert(from < src->Header.N.Children - 1);
-	assert(to <= src->Header.N.Children - 1);
+	assert(from < src->Header.N.Values);
+	assert(to <= src->Header.N.Values);
 
 	runtime·memmove(dst->Body.Leaf.Values, &src->Body.Leaf.Values[from], (to - from) * sizeof(src->Body.Leaf.Values[0]));
 }
@@ -463,7 +455,7 @@ Slice
 main·BplusLeafGetKeyAt(Page *p, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeLeaf);
-	return main·Int2Slice((int64 * ) & p->Body.Leaf.Keys[index]);
+	return main·Int2Slice(p->Body.Leaf.Keys[index]);
 }
 
 
@@ -500,7 +492,7 @@ Slice
 main·BplusLeafGetValueAt(Page *p, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeLeaf);
-	return main·Int2Slice((int64 * )p->Body.Leaf.Values[index]);
+	return main·Int2Slice(p->Body.Leaf.Values[index]);
 }
 
 

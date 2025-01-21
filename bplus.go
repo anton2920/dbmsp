@@ -40,14 +40,16 @@ type Page [PageSize]byte
 /* NOTE(anton2920): must be in sync with C definition. */
 const (
 	BplusNotFound = -2
-	BplusOrder    = (1 << 8) - 1
-	PageSize      = 4096
+	// BplusOrder    = (1 << 8) - 1
+	PageSize = 4096
 )
 
 const (
 	BplusVersion = 0x1
 
-	BplusTxMaxPages    = PageSize
+	BplusOrder = 5
+
+	BplusTxMaxPages    = PageSize - 1
 	BplusNewPageOffset = BplusTxMaxPages
 )
 
@@ -240,13 +242,25 @@ func (tx *BplusTx) readPage(page *Page, offset int64) error {
 }
 
 func (tx *BplusTx) writePage(page *Page, offset int64) int64 {
+	n := int64(len(tx.Pages))
+
+	switch offset {
+	case tx.Root:
+		tx.Root = n
+	case tx.EndSentinel:
+		tx.EndSentinel = n
+	case tx.RendSentinel:
+		tx.RendSentinel = n
+	}
+
 	if offset < BplusTxMaxPages {
 		tx.Pages[offset] = *page
 		return offset
 	}
+
 	/* TODO(anton2920): if RefCount == 1 -> move to FreeList. */
 	tx.Pages = append(tx.Pages, *page)
-	return int64(len(tx.Pages) - 1)
+	return n
 }
 
 func (tx *BplusTx) Commit() error {
@@ -262,6 +276,7 @@ func (tx *BplusTx) Commit() error {
 				if offset < BplusTxMaxPages {
 					offset *= PageSize
 					offset += startOffset
+					BplusNodeSetChildAt(page, offset, j)
 				}
 			}
 		}
@@ -365,11 +380,8 @@ forOffset:
 
 		tx.Root = offset
 	} else {
-		/* Key not found, insert. */
-		half := BplusOrder / 2
-		var newPage int64
-
 		/* Insert new key. */
+		half := BplusOrder / 2
 		BplusLeafInsertKeyAt(&page, key, index+1)
 		BplusLeafInsertValueAt(&page, value, index+1)
 		if BplusLeafGetNvalues(&page) < BplusOrder {
@@ -398,7 +410,7 @@ forOffset:
 			BplusLeafSetNext(&newLeaf, BplusLeafGetNext(&page))
 
 			newKey := BplusLeafGetKeyAt(&page, half)
-			newPage = tx.writePage(&newLeaf, BplusNewPageOffset)
+			newPage := tx.writePage(&newLeaf, BplusNewPageOffset)
 
 			var leafNext Page
 			if err := tx.readPage(&leafNext, BplusLeafGetNext(&page)); err != nil {
@@ -415,13 +427,14 @@ forOffset:
 				index := tx.SearchPath[p].Index
 				page := tx.SearchPath[p].Page
 
+				BplusNodeSetChildAt(&page, offset, index)
 				BplusNodeInsertKeyAt(&page, newKey, index+1)
 				BplusNodeInsertChildAt(&page, newPage, index+1)
 				if BplusNodeGetNchildren(&page) < BplusOrder {
-					offset = tx.writePage(&page, offset)
+					offset = tx.writePage(&page, tx.SearchPath[p].Offset)
 
 					/* Update indexing structure. */
-					for ; p >= 0; p-- {
+					for p := p - 1; p >= 0; p-- {
 						index := tx.SearchPath[p].Index
 						page := tx.SearchPath[p].Page
 
@@ -439,16 +452,16 @@ forOffset:
 				BplusNodeCopyKeys(&newNode, &page, half+1, -1)
 				BplusNodeCopyChildren(&newNode, &page, half+1, -1)
 				BplusNodeSetChildAt(&newNode, BplusNodeGetChildAt(&page, half), -1)
-				BplusNodeSetNchildren(&page, half+1)
+				BplusNodeSetNchildren(&page, half)
 
 				newKey = BplusNodeGetKeyAt(&page, half)
 				newPage = tx.writePage(&newNode, BplusNewPageOffset)
 
-				tx.writePage(&page, offset)
+				offset = tx.writePage(&page, tx.SearchPath[p].Offset)
 			}
 
 			tmp := tx.Root
-			BplusPageInit(&page, BplusPageTypeNode, 2)
+			BplusPageInit(&page, BplusPageTypeNode, 1)
 			BplusNodeSetKeyAt(&page, newKey, 0)
 			BplusNodeSetChildAt(&page, tmp, -1)
 			BplusNodeSetChildAt(&page, newPage, 0)
@@ -471,7 +484,7 @@ func (tx *BplusTx) stringImpl(buf *bytes.Buffer, offset int64, level int) {
 
 		switch BplusPageGetType(&page) {
 		case BplusPageTypeNode:
-			for i := 0; i < BplusNodeGetNchildren(&page)-1; i++ {
+			for i := 0; i < BplusNodeGetNchildren(&page); i++ {
 				fmt.Fprintf(buf, "%4d", Slice2Int(BplusNodeGetKeyAt(&page, i)))
 			}
 			buf.WriteRune('\n')
