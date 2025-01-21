@@ -111,12 +111,14 @@ func ReadPagesAt(f *os.File, pages []Page, offset int64) error {
 	return nil
 }
 
-func WritePagesAt(f *os.File, pages []Page, offset int64) error {
+func WritePagesAt(f *os.File, pages []Page, offset int64, sync bool) error {
 	if _, err := f.WriteAt(Pages2Bytes(pages), offset); err != nil {
 		return fmt.Errorf("failed to write %d pages at %d: %v", len(pages), offset, err)
 	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("failed to sync writes to disk: %v", err)
+	if sync {
+		if err := f.Sync(); err != nil {
+			return fmt.Errorf("failed to sync writes to disk: %v", err)
+		}
 	}
 	return nil
 }
@@ -161,7 +163,7 @@ func OpenBplus(path string) (*Bplus, error) {
 		BplusPageInit(&pages[RendSentinel], BplusPageTypeLeaf, 0)
 		//BplusLeafSetNext(&pages[RendSentinel], Root*PageSize)
 
-		if err := WritePagesAt(t.Fd, pages[:], 0); err != nil {
+		if err := WritePagesAt(t.Fd, pages[:], 0, true); err != nil {
 			return nil, fmt.Errorf("failed to write initial pages: %v", err)
 		}
 		t.Meta = pages[Meta]
@@ -319,7 +321,7 @@ func (tx *BplusTx) Commit() error {
 		tx.RendSentinel = transformOffset(tx.RendSentinel, startOffset)
 	}
 
-	if err := WritePagesAt(tx.Tree.Fd, tx.Pages, startOffset); err != nil {
+	if err := WritePagesAt(tx.Tree.Fd, tx.Pages, startOffset, false); err != nil {
 		return fmt.Errorf("failed to commit pages: %v", err)
 	}
 
@@ -329,7 +331,7 @@ func (tx *BplusTx) Commit() error {
 	BplusMetaSetEndSentinel(meta, tx.EndSentinel)
 	BplusMetaSetRendSentinel(meta, tx.RendSentinel)
 
-	if err := WritePagesAt(tx.Tree.Fd, Page2Slice(meta), 0); err != nil {
+	if err := WritePagesAt(tx.Tree.Fd, Page2Slice(meta), 0, true); err != nil {
 		return fmt.Errorf("failed to commit meta: %v", err)
 	}
 	return nil
