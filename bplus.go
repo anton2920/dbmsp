@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"sync"
+
+	"github.com/anton2920/gofa/trace"
 )
 
 type PathItem struct {
@@ -89,14 +91,12 @@ func BplusLeafCopyKeys(*Page, *Page, int, int)
 func BplusLeafCopyValues(*Page, *Page, int, int)
 func BplusLeafFind(*Page, []byte) (int, bool)
 func BplusLeafGetKeyAt(*Page, int) []byte
-func BplusLeafGetNext(*Page) int64
 func BplusLeafGetNvalues(*Page) int
 func BplusLeafGetPrev(*Page) int64
 func BplusLeafGetValueAt(*Page, int) []byte
 func BplusLeafInsertKeyAt(*Page, []byte, int)
 func BplusLeafInsertValueAt(*Page, []byte, int)
 func BplusLeafSetKeyAt(*Page, []byte, int)
-func BplusLeafSetNext(*Page, int64)
 func BplusLeafSetNvalues(*Page, int)
 func BplusLeafSetPrev(*Page, int64)
 func BplusLeafSetValueAt(*Page, []byte, int)
@@ -152,14 +152,14 @@ func OpenBplus(path string) (*Bplus, error) {
 		BplusMetaSetRendSentinel(&pages[Meta], RendSentinel*PageSize)
 
 		BplusPageInit(&pages[Root], BplusPageTypeLeaf, 0)
-		BplusLeafSetPrev(&pages[Root], RendSentinel*PageSize)
-		BplusLeafSetNext(&pages[Root], EndSentinel*PageSize)
+		//BplusLeafSetPrev(&pages[Root], RendSentinel*PageSize)
+		//BplusLeafSetNext(&pages[Root], EndSentinel*PageSize)
 
 		BplusPageInit(&pages[EndSentinel], BplusPageTypeLeaf, 0)
-		BplusLeafSetPrev(&pages[EndSentinel], Root*PageSize)
+		//BplusLeafSetPrev(&pages[EndSentinel], Root*PageSize)
 
 		BplusPageInit(&pages[RendSentinel], BplusPageTypeLeaf, 0)
-		BplusLeafSetNext(&pages[RendSentinel], Root*PageSize)
+		//BplusLeafSetNext(&pages[RendSentinel], Root*PageSize)
 
 		if err := WritePagesAt(t.Fd, pages[:], 0); err != nil {
 			return nil, fmt.Errorf("failed to write initial pages: %v", err)
@@ -168,6 +168,10 @@ func OpenBplus(path string) (*Bplus, error) {
 	}
 
 	return &t, nil
+}
+
+func (t *Bplus) Begin() int64 {
+	return 0
 }
 
 func (t *Bplus) BeginTx() *BplusTx {
@@ -182,6 +186,10 @@ func (t *Bplus) BeginTx() *BplusTx {
 	tx.Tree.RUnlock()
 
 	return &tx
+}
+
+func (t *Bplus) End() int64 {
+	return BplusMetaGetEndSentinel(&t.Meta)
 }
 
 func (t *Bplus) Get(key []byte) []byte {
@@ -214,6 +222,8 @@ func (t *Bplus) Has(key []byte) bool {
 }
 
 func (t *Bplus) Set(key []byte, value []byte) {
+	defer trace.End(trace.Begin(""))
+
 	tx := t.BeginTx()
 	defer tx.Rollback()
 
@@ -263,26 +273,51 @@ func (tx *BplusTx) writePage(page *Page, offset int64) int64 {
 	return n
 }
 
+func transformOffset(offset int64, startOffset int64) int64 {
+	offset *= PageSize
+	offset += startOffset
+	return offset
+}
+
 func (tx *BplusTx) Commit() error {
 	tx.Tree.Lock()
 	defer tx.Tree.Unlock()
 
 	startOffset := BplusMetaGetNextOffset(&tx.Tree.Meta)
+
+	/* TODO(anton2920): store pointers to places where offsets must be updated. */
 	for i := 0; i < len(tx.Pages); i++ {
 		page := &tx.Pages[i]
-		if BplusPageGetType(page) == BplusPageTypeNode {
+		switch BplusPageGetType(page) {
+		case BplusPageTypeNode:
 			for j := -1; j < BplusNodeGetNchildren(page); j++ {
 				offset := BplusNodeGetChildAt(page, j)
 				if offset < BplusTxMaxPages {
-					offset *= PageSize
-					offset += startOffset
-					BplusNodeSetChildAt(page, offset, j)
+					BplusNodeSetChildAt(page, transformOffset(offset, startOffset), j)
 				}
 			}
+		case BplusPageTypeLeaf:
+			/*
+				prev := BplusLeafGetPrev(page)
+				if prev < BplusTxMaxPages {
+					BplusLeafSetPrev(page, transformOffset(prev, startOffset))
+				}
+				next := BplusLeafGetNext(page)
+				if next < BplusTxMaxPages {
+					BplusLeafSetNext(page, transformOffset(next, startOffset))
+				}
+			*/
 		}
 	}
-	tx.Root *= PageSize
-	tx.Root += startOffset
+	if tx.Root < BplusTxMaxPages {
+		tx.Root = transformOffset(tx.Root, startOffset)
+	}
+	if tx.EndSentinel < BplusTxMaxPages {
+		tx.EndSentinel = transformOffset(tx.EndSentinel, startOffset)
+	}
+	if tx.RendSentinel < BplusTxMaxPages {
+		tx.RendSentinel = transformOffset(tx.RendSentinel, startOffset)
+	}
 
 	if err := WritePagesAt(tx.Tree.Fd, tx.Pages, startOffset); err != nil {
 		return fmt.Errorf("failed to commit pages: %v", err)
@@ -339,6 +374,8 @@ func (tx *BplusTx) Rollback() error {
 }
 
 func (tx *BplusTx) Set(key []byte, value []byte) {
+	defer trace.End(trace.Begin(""))
+
 	var page Page
 
 	var index int
@@ -406,20 +443,20 @@ forOffset:
 			BplusLeafCopyValues(&newLeaf, &page, half, -1)
 			BplusLeafSetNvalues(&page, half)
 
-			BplusLeafSetPrev(&newLeaf, offset)
-			BplusLeafSetNext(&newLeaf, BplusLeafGetNext(&page))
+			//BplusLeafSetPrev(&newLeaf, offset)
+			//BplusLeafSetNext(&newLeaf, BplusLeafGetNext(&page))
 
 			newKey := BplusLeafGetKeyAt(&page, half)
 			newPage := tx.writePage(&newLeaf, BplusNewPageOffset)
 
-			var leafNext Page
-			if err := tx.readPage(&leafNext, BplusLeafGetNext(&page)); err != nil {
-				log.Panicf("Failed to read leaf.Next: %v", err)
-			}
-			BplusLeafSetPrev(&leafNext, newPage)
-			tx.writePage(&leafNext, BplusLeafGetNext(&page))
+			//var leafNext Page
+			//if err := tx.readPage(&leafNext, BplusLeafGetNext(&page)); err != nil {
+			//	log.Panicf("Failed to read leaf.Next: %v", err)
+			//}
+			//BplusLeafSetPrev(&leafNext, newPage)
+			//tx.writePage(&leafNext, BplusLeafGetNext(&page))
 
-			BplusLeafSetNext(&page, newPage)
+			//BplusLeafSetNext(&page, newPage)
 			offset = tx.writePage(&page, offset)
 
 			/* Update indexing structure. */

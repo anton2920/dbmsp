@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"runtime"
 	"unsafe"
+
+	_ "github.com/anton2920/gofa/intel"
+	"github.com/anton2920/gofa/trace"
 )
 
 func Main()
@@ -27,6 +29,9 @@ func Int2Slice(x int) []byte {
 	return xs
 }
 
+func BplusPrintSeq(t *Bplus) {
+}
+
 func main() {
 	CallC(Main)
 
@@ -36,13 +41,16 @@ func main() {
 	}
 
 	println("INSERT 1!!!")
+	trace.BeginProfile()
 	for _, key := range InsertKeys {
 		//fmt.Println("I:", key)
 		t.Set(Int2Slice(key), Int2Slice(0))
 		//fmt.Println(t)
 	}
+	trace.EndAndPrintProfile()
 	fmt.Println(t)
+	//BplusPrintSeq(t)
 
 	/* NOTE(anton2920): sanity check for 'missing stackmap' error. */
-	runtime.GC()
+	//runtime.GC()
 }

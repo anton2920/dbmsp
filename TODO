@@ -1,13 +1,14 @@
 Now;
-	- Better error messages.
+	- Store Prev/Next pointers separately.
 
 Later:
-	- All Bplus functions as implicit Tx wrappers for single operations.
 	- Ability to store fixed-size 8 byte int63s, variable-sized in-place data and variable-sized blob data.
 	- Support batching.
+	- Freelist.
 
 Before release:
+	- Better error messages.
 	- Snapshots.
-	- Freelist.
+
 	- Bloom filter for Has().
 	- LRU cache for reads.

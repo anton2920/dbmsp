@@ -67,11 +67,8 @@ struct Node {
 };
 
 struct Leaf {
-	uint64 Keys[BplusOrder-2];
-	uint64 Values[BplusOrder-2];
-
-	int64 Prev;
-	int64 Next;
+	uint64 Keys[BplusOrder-1];
+	uint64 Values[BplusOrder-1];
 };
 
 struct LeafFindResult {
@@ -460,29 +457,11 @@ main·BplusLeafGetKeyAt(Page *p, intgo index)
 
 
 #pragma textflag NOSPLIT
-int64
-main·BplusLeafGetNext(Page *p)
-{
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	return p->Body.Leaf.Next;
-}
-
-
-#pragma textflag NOSPLIT
 intgo
 main·BplusLeafGetNvalues(Page *p)
 {
 	assert(p->Header.Type == BplusPageTypeLeaf);
 	return p->Header.N.Values;
-}
-
-
-#pragma textflag NOSPLIT
-int64
-main·BplusLeafGetPrev(Page *p)
-{
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	return p->Body.Leaf.Prev;
 }
 
 
@@ -529,24 +508,6 @@ main·BplusLeafSetKeyAt(Page *p, Slice key, intgo index)
 {
 	assert(p->Header.Type == BplusPageTypeLeaf);
 	p->Body.Leaf.Keys[index] = main·Slice2Int(key);
-}
-
-
-#pragma textflag NOSPLIT
-void
-main·BplusLeafSetNext(Page *p, int64 next)
-{
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	p->Body.Leaf.Next = next;
-}
-
-
-#pragma textflag NOSPLIT
-void
-main·BplusLeafSetPrev(Page *p, int64 prev)
-{
-	assert(p->Header.Type == BplusPageTypeLeaf);
-	p->Body.Leaf.Prev = prev;
 }
 
 
