@@ -12,3 +12,6 @@ Before release:
 
 	- Bloom filter for Has().
 	- LRU cache for reads.
+
+
+- Benchmark against in-memory, FS-based and 3rd-party.
