@@ -27,13 +27,12 @@ const (
 	PageTypeLeaf
 )
 
-func (p *Page) Init(typ byte, n int) {
+func (p *Page) Init(typ byte) {
 	var clr Page
 	copy(p[:], clr[:])
 
 	hdr := p.Header()
 	hdr.Type = typ
-	hdr.N = byte(n)
 }
 
 func (p *Page) Header() *PageHeader {

@@ -16,7 +16,7 @@ type Leaf struct {
 
 func init() {
 	var page Page
-	page.Init(PageTypeLeaf, 0)
+	page.Init(PageTypeLeaf)
 
 	leaf := page.Leaf()
 	debug.Printf("[leaf]: len(Leaf.Data) == %d\n", len(leaf.Data))

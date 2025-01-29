@@ -22,7 +22,7 @@ printv()
 }
 
 # Switch to Go 1.4.
-. go14-env
+# . go14-env
 
 # NOTE(anton2920): don't like Google spying on me.
 GOPROXY=direct; export GOPROXY
