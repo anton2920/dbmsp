@@ -1,8 +1,10 @@
-Now;
+Now:
+	- Store child pointers at the back of the page.
+	- Store values at the back of the page?
 	- Store Prev/Next pointers separately.
 
 Later:
-	- Ability to store fixed-size 8 byte int63s, variable-sized in-place data and variable-sized blob data.
+	- Ability to store variable-sized blob data.
 	- Support batching.
 	- Freelist.
 
