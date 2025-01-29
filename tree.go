@@ -12,7 +12,8 @@ type Tree struct {
 const (
 	TreeMaxOrder = 1 << 8
 	//TreeMaxOrder     = 5
-	TreeMaxKeyLength = (1 << 16) - 1
+	TreeMaxKeyLength   = (1 << 16) - 1
+	TreeMaxValueLength = (1 << 16) - 1
 )
 
 func init() {

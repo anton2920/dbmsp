@@ -64,9 +64,9 @@ func (p *Page) Leaf() *Leaf {
 }
 
 func Page2Slice(p *Page) []Page {
-	return *(*[]Page)(unsafe.Pointer(&reflect.SliceHeader{uintptr(unsafe.Pointer(p)), 1, 1}))
+	return *(*[]Page)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(p)), Len: 1, Cap: 1}))
 }
 
 func Pages2Bytes(ps []Page) []byte {
-	return *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{uintptr(unsafe.Pointer(&ps[0])), len(ps) * PageSize, cap(ps) * PageSize}))
+	return *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&ps[0])), Len: len(ps) * PageSize, Cap: cap(ps) * PageSize}))
 }

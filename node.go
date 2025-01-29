@@ -12,6 +12,7 @@ import (
 type Node struct {
 	PageHeader
 
+	/* Data is structured as follows: | N*sizeof(int64) bytes of children | N*sizeof(uint16) bytes of keyOffsets | keys... | */
 	Data [PageSize - PageHeaderSize]byte
 }
 
@@ -74,7 +75,7 @@ func (n *Node) GetChildOffsetInData(index int) int {
 	return int(unsafe.Sizeof(i)) * (index + 1)
 }
 
-func (n *Node) GetKeyLengthAndOffset(index int) (length int, offset int) {
+func (n *Node) GetKeyOffsetAndLength(index int) (offset int, length int) {
 	switch {
 	case index < int(n.N)-1:
 		offset = int(binary.LittleEndian.Uint16(n.Data[n.GetKeyOffsetInData(index):]))
@@ -99,7 +100,7 @@ func (n *Node) GetChildAt(index int) int64 {
 }
 
 func (n *Node) GetKeyAt(index int) []byte {
-	length, offset := n.GetKeyLengthAndOffset(index)
+	offset, length := n.GetKeyOffsetAndLength(index)
 	return n.Data[offset : offset+length]
 }
 
@@ -115,7 +116,7 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 		return false
 	}
 
-	_, offset := n.GetKeyLengthAndOffset(index)
+	offset, _ := n.GetKeyOffsetAndLength(index)
 	if int(n.Nbytes)+len(key)+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child)) > len(n.Data) {
 		return false
 	}
@@ -157,7 +158,7 @@ func (n *Node) SetKeyAt(key []byte, index int) bool {
 		return false
 	}
 
-	length, offset := n.GetKeyLengthAndOffset(index)
+	offset, length := n.GetKeyOffsetAndLength(index)
 	if int(n.Nbytes)-length+len(key) > len(n.Data) {
 		return false
 	}
@@ -185,14 +186,16 @@ func (n *Node) String() string {
 		fmt.Fprintf(&buf, "%d", n.GetChildAt(i))
 	}
 
-	buf.WriteString("], Offsets: [")
-	for i := 0; i < int(n.N); i++ {
-		if i > 0 {
-			buf.WriteString(", ")
+	/*
+		buf.WriteString("], Offsets: [")
+		for i := 0; i < int(n.N); i++ {
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+			offset, _ := n.GetKeyOffsetAndLength(i)
+			fmt.Fprintf(&buf, "%d", offset)
 		}
-		_, offset := n.GetKeyLengthAndOffset(i)
-		fmt.Fprintf(&buf, "%d", offset)
-	}
+	*/
 
 	buf.WriteString("], Keys: [")
 	for i := 0; i < int(n.N); i++ {
