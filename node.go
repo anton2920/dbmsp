@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/anton2920/gofa/debug"
 )
 
 type Node struct {
@@ -20,27 +22,27 @@ func init() {
 	page.Init(PageTypeNode, 0)
 
 	node := page.Node()
-	fmt.Printf("[node]: len(Node.Keys) == %d\n", len(node.Keys))
+	debug.Printf("[node]: len(Node.Keys) == %d\n", len(node.Keys))
 
 	node.InsertKeyAt([]byte{1, 2, 3, 4}, 0)
 	node.InsertChildAt(1, -1)
-	fmt.Printf("[node]: %v\n", node)
+	debug.Printf("[node]: %v\n", node)
 
 	node.InsertKeyAt([]byte{5, 6, 7, 8, 9, 10}, 1)
 	node.InsertChildAt(2, 0)
-	fmt.Printf("[node]: %v\n", node)
+	debug.Printf("[node]: %v\n", node)
 
 	node.InsertKeyAt([]byte{192, 168, 0, 1}, 2)
 	node.InsertChildAt(3, 1)
-	fmt.Printf("[node]: %v\n", node)
+	debug.Printf("[node]: %v\n", node)
 
 	node.SetKeyAt([]byte{254}, 0)
 	node.SetChildAt(254, 0)
-	fmt.Printf("[node]: %v\n", node)
+	debug.Printf("[node]: %v\n", node)
 
 	node.SetKeyAt([]byte{255, 255, 255, 255, 255, 255, 255, 255}, 1)
 	node.SetChildAt(255, 1)
-	fmt.Printf("[node]: %v\n", node)
+	debug.Printf("[node]: %v\n", node)
 }
 
 func (dst *Node) CopyChildren(src *Node, where int, from int, to int) {
@@ -201,7 +203,7 @@ func (n *Node) String() string {
 		}
 		fmt.Fprintf(&buf, "%v", n.GetKeyAt(i))
 	}
-	buf.WriteString("] }")
 
+	buf.WriteString("] }")
 	return buf.String()
 }

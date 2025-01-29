@@ -10,8 +10,8 @@ type Tree struct {
 }
 
 const (
-	//TreeMaxOrder = 1 << 8
-	TreeMaxOrder     = 5
+	TreeMaxOrder = 1 << 8
+	//TreeMaxOrder     = 5
 	TreeMaxKeyLength = (1 << 16) - 1
 )
 

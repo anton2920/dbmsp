@@ -21,18 +21,6 @@ printv()
 	if test $VERBOSITY -gt 0; then echo "$@"; fi
 }
 
-check_db_variable()
-{
-	if test "$DATABASE_URL" = ""; then
-		echo "Before running 'go test', you must set DATABASE_URL variable!"
-		exit 1
-	fi
-	if echo $DATABASE_URL | grep -v "_test"; then
-		echo "Database for tests must be in form 'name_test'"
-		exit 1
-	fi
-}
-
 # Switch to Go 1.4.
 . go14-env
 
@@ -61,34 +49,28 @@ case $1 in
 		;;
 	check)
 		run $0 $VERBOSITYFLAGS test-race-cover
-		check_db_variable
 		run ./$PROJECT.test
 		;;
 	check-bench)
 		run $0 $VERBOSITYFLAGS test
-		check_db_variable
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=.
 		;;
 	check-bench-cpu)
 		run $0 $VERBOSITYFLAGS test
-		check_db_variable
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof
 		;;
 	check-bench-mem)
 		run $0 $VERBOSITYFLAGS test
-		check_db_variable
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.memprofile=$PROJECT-mem.pprof
 		;;
 	check-cover)
 		run $0 $VERBOSITYFLAGS test-race-cover
-		check_db_variable
 		run ./$PROJECT.test -test.coverprofile=c.out
 		run go tool cover -html=c.out
 		run rm -f c.out
 		;;
 	check-msan)
 		run $0 $VERBOSITYFLAGS test-msan
-		check_db_variable
 		run ./$PROJECT.test
 		;;
 	disas | disasm | disassembly)

@@ -2,20 +2,27 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 
+	"github.com/anton2920/gofa/debug"
 	"github.com/anton2920/gofa/util"
 )
 
 type Leaf struct {
 	PageHeader
+
 	Data [PageSize - PageHeaderSize]byte
 }
 
-func (dst *Leaf) CopyKeys(src *Leaf, from int, to int) {
+func init() {
+	var page Page
+	page.Init(PageTypeLeaf, 0)
 
+	leaf := page.Leaf()
+	debug.Printf("[leaf]: len(Leaf.Data) == %d\n", len(leaf.Data))
 }
 
-func (dst *Leaf) CopyValues(src *Leaf, from int, to int) {
+func (dst *Leaf) CopyKeysAndValues(src *Leaf, from int, to int) {
 
 }
 
@@ -36,6 +43,10 @@ func (l *Leaf) Find(key []byte) (int, bool) {
 	return int(l.N) - 1, false
 }
 
+func (l *Leaf) FindKeyLengthAndOffset(index int) (length int, offset int) {
+	return
+}
+
 func (l *Leaf) GetKeyAt(index int) []byte {
 	return nil
 }
@@ -44,18 +55,38 @@ func (l *Leaf) GetValueAt(index int) []byte {
 	return nil
 }
 
-func (l *Leaf) InsertKeyAt(key []byte, index int) {
+func (l *Leaf) GetKeyValueAt(index int) ([]byte, []byte) {
+	return nil, nil
+}
+
+func (l *Leaf) InsertKeyValueAt(key []byte, index int) {
 
 }
 
-func (l *Leaf) InsertValueAt(value []byte, index int) {
+func (l *Leaf) SetKeyValueAt(key []byte, index int) {
 
 }
 
-func (l *Leaf) SetKeyAt(key []byte, index int) {
+func (l *Leaf) String() string {
+	var buf bytes.Buffer
 
-}
+	buf.WriteString("{ Keys: [")
+	for i := 0; i < int(l.N); i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		fmt.Fprintf(&buf, "%v", l.GetKeyAt(i))
+	}
 
-func (l *Leaf) SetValueAt(value []byte, index int) {
+	buf.WriteString("], Values: [")
 
+	for i := 0; i < int(l.N); i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		fmt.Fprintf(&buf, "%v", l.GetValueAt(i))
+	}
+
+	buf.WriteString("] }")
+	return buf.String()
 }
