@@ -9,12 +9,11 @@ import (
 type Page [PageSize]byte
 
 type PageHeader struct {
-	Type   uint8
-	N      uint8
-	Nbytes uint16
-	Head   uint16
-	Tail   uint16
-	// _    [2]byte
+	Type uint8
+	N    uint8
+	Head uint16
+	Tail uint16
+	_    [2]byte
 }
 
 const (

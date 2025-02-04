@@ -13,15 +13,15 @@ func BenchmarkLeafInsertKeyValueAt(b *testing.B) {
 	b.Run("Prepend", func(b *testing.B) {
 		leaf.Init(key, value)
 		for i := 0; i < b.N; i++ {
-			if leaf.InsertKeyChildAt(key, value, 0) == false {
+			if leaf.InsertKeyValueAt(key, value, 0) == false {
 				leaf.Init(key, value)
 			}
 		}
 	})
 	b.Run("Append", func(b *testing.B) {
-		leaf.Init(key, 0, 0)
+		leaf.Init(key, value)
 		for i := 0; i < b.N; i++ {
-			if leaf.InsertKeyChildAt(key, value, int(leaf.N)) == false {
+			if leaf.InsertKeyValueAt(key, value, int(leaf.N)) == false {
 				leaf.Init(key, value)
 			}
 		}

@@ -13,7 +13,7 @@ import (
 type Leaf struct {
 	PageHeader
 
-	/* Data is structured as follows: | N*sizeof(uint16) byte of keyOffsets-valueOffsets pairs | key-value pairs... | */
+	/* Data is structured as follows: | N*sizeof(uint16) bytes of keyOffsets | keys... | ...empty space... | ...values | N*sizeof(uint16) bytes of valueOffsets | */
 	Data [PageSize - PageHeaderSize]byte
 }
 
@@ -47,17 +47,14 @@ func (l *Leaf) Init(key []byte, value []byte) {
 		panic("no space left for key or value")
 	}
 
-	keyOffset = uint16(int(unsafe.Sizeof(keyOffset)) + int(unsafe.Sizeof(valueOffset)))
-	valueOffset = uint16(int(unsafe.Sizeof(keyOffset)) + int(unsafe.Sizeof(valueOffset)) + len(key))
+	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(0):], uint16(unsafe.Sizeof(keyOffset)))
+	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(0):], uint16(len(l.Data)-int(unsafe.Sizeof(valueOffset))))
 
-	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(0):], keyOffset)
-	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(0):], valueOffset)
+	l.Head = uint16(len(key) + int(unsafe.Sizeof(keyOffset)))
+	l.Tail = uint16(len(value) + int(unsafe.Sizeof(valueOffset)))
+	l.N = 1
 
-	copy(l.Data[keyOffset:], key)
-	copy(l.Data[valueOffset:], value)
-
-	l.Nbytes += uint16(len(key) + len(value) + int(unsafe.Sizeof(keyOffset)) + int(unsafe.Sizeof(valueOffset)))
-	l.N++
+	l.SetKeyValueAt(key, value, 0)
 }
 
 /* TODO(anton2920): optimize using SIMD or some form of batch comparison. */
@@ -79,39 +76,44 @@ func (l *Leaf) Find(key []byte) (int, bool) {
 
 func (l *Leaf) GetKeyOffsetAndLength(index int) (offset int, length int) {
 	switch {
-	case index <= int(l.N)-1:
+	case index < int(l.N)-1:
 		offset = int(binary.LittleEndian.Uint16(l.Data[l.GetKeyOffsetInData(index):]))
-		length = int(binary.LittleEndian.Uint16(l.Data[l.GetValueOffsetInData(index):])) - offset
+		length = int(binary.LittleEndian.Uint16(l.Data[l.GetKeyOffsetInData(index+1):])) - offset
+	case index == int(l.N)-1:
+		offset = int(binary.LittleEndian.Uint16(l.Data[l.GetKeyOffsetInData(index):]))
+		length = int(l.Head) - offset
 	case index > int(l.N)-1:
-		offset = int(l.Nbytes)
+		offset = int(l.Head)
 		length = 0
 	}
 	return
 }
 
+/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
+/* value0 | offt0 | */
 func (l *Leaf) GetValueOffsetAndLength(index int) (offset int, length int) {
 	switch {
 	case index < int(l.N)-1:
 		offset = int(binary.LittleEndian.Uint16(l.Data[l.GetValueOffsetInData(index):]))
-		length = int(binary.LittleEndian.Uint16(l.Data[l.GetKeyOffsetInData(index+1):])) - offset
+		length = offset - int(binary.LittleEndian.Uint16(l.Data[l.GetValueOffsetInData(index+1):]))
 	case index == int(l.N)-1:
 		offset = int(binary.LittleEndian.Uint16(l.Data[l.GetValueOffsetInData(index):]))
-		length = int(l.Nbytes) - offset
+		length = offset - (len(l.Data) - int(l.Tail))
+	case index > int(l.N)-1:
+		offset = len(l.Data) - int(l.Tail)
+		length = 0
 	}
 	return
 }
 
 func (l *Leaf) GetKeyOffsetInData(index int) int {
-	var pair struct {
-		keyOffset   uint16
-		valueOffset uint16
-	}
-	return int(unsafe.Sizeof(pair)) * index
+	var keyOffset uint16
+	return int(unsafe.Sizeof(keyOffset)) * index
 }
 
 func (l *Leaf) GetValueOffsetInData(index int) int {
-	var keyOffset uint16
-	return l.GetKeyOffsetInData(index) + int(unsafe.Sizeof(keyOffset))
+	var valueOffset uint16
+	return len(l.Data) - int(unsafe.Sizeof(valueOffset))*(index+1)
 }
 
 func (l *Leaf) GetKeyAt(index int) []byte {
@@ -121,7 +123,7 @@ func (l *Leaf) GetKeyAt(index int) []byte {
 
 func (l *Leaf) GetValueAt(index int) []byte {
 	offset, length := l.GetValueOffsetAndLength(index)
-	return l.Data[offset : offset+length]
+	return l.Data[offset-length : offset]
 }
 
 func (l *Leaf) IncKeyOffset(index int, inc uint16) {
@@ -129,45 +131,51 @@ func (l *Leaf) IncKeyOffset(index int, inc uint16) {
 	binary.LittleEndian.PutUint16(buffer, binary.LittleEndian.Uint16(buffer)+inc)
 }
 
-func (l *Leaf) IncValueOffset(index int, inc uint16) {
+func (l *Leaf) DecValueOffset(index int, dec uint16) {
 	buffer := l.Data[l.GetValueOffsetInData(index):]
-	binary.LittleEndian.PutUint16(buffer, binary.LittleEndian.Uint16(buffer)+inc)
+	binary.LittleEndian.PutUint16(buffer, binary.LittleEndian.Uint16(buffer)-dec)
 }
 
 func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
-	var pair struct {
-		keyOffset   uint16
-		valueOffset uint16
-	}
+	var extraOffset uint16
 
 	if (len(key) > TreeMaxKeyLength) || (len(value) > TreeMaxValueLength) {
 		return false
 	}
 
-	offset, _ := l.GetKeyOffsetAndLength(index)
-	if int(l.Nbytes)+len(key)+len(value) > len(l.Data) {
+	keyOffset, _ := l.GetKeyOffsetAndLength(index)
+	valueOffset, _ := l.GetValueOffsetAndLength(index)
+	if int(l.Head)+int(l.Tail)+len(key)+len(value) > len(l.Data) {
 		return false
 	}
 
 	for i := 0; i < index; i++ {
-		l.IncKeyOffset(i, uint16(int(unsafe.Sizeof(pair))))
-		l.IncValueOffset(i, uint16(int(unsafe.Sizeof(pair))))
+		l.IncKeyOffset(i, uint16(unsafe.Sizeof(extraOffset)))
+		l.DecValueOffset(i, uint16(unsafe.Sizeof(extraOffset)))
 	}
 	for i := index; i < int(l.N); i++ {
-		l.IncKeyOffset(i, uint16(len(key)+len(value)+int(unsafe.Sizeof(pair))))
-		l.IncValueOffset(i, uint16(len(key)+len(value)+int(unsafe.Sizeof(pair))))
+		l.IncKeyOffset(i, uint16(len(key)+int(unsafe.Sizeof(extraOffset))))
+		l.DecValueOffset(i, uint16(len(value)+int(unsafe.Sizeof(extraOffset))))
 	}
 
-	copy(l.Data[offset+len(key)+len(value)+int(unsafe.Sizeof(pair)):], l.Data[offset:l.Nbytes])
-	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+int(unsafe.Sizeof(pair)):], l.Data[l.GetKeyOffsetInData(int(l.N)):offset])
-	copy(l.Data[offset+int(unsafe.Sizeof(pair)):], key)
-	copy(l.Data[offset+len(key)+int(unsafe.Sizeof(pair)):], value)
+	copy(l.Data[keyOffset+len(key)+int(unsafe.Sizeof(extraOffset)):], l.Data[keyOffset:l.Head])
+	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+int(unsafe.Sizeof(extraOffset)):], l.Data[l.GetKeyOffsetInData(int(l.N)):keyOffset])
+	copy(l.Data[keyOffset+int(unsafe.Sizeof(extraOffset)):], key)
+
+	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
+	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)-int(unsafe.Sizeof(extraOffset)):], l.Data[len(l.Data)-int(l.Tail):valueOffset])
+	/* TODO(anton2920): maybe we don't need -1 */
+	copy(l.Data[valueOffset-int(unsafe.Sizeof(extraOffset)):], l.Data[valueOffset:l.GetValueOffsetInData(int(l.N)-1)])
+	copy(l.Data[valueOffset-len(value)-int(unsafe.Sizeof(extraOffset)):], value)
 
 	copy(l.Data[l.GetKeyOffsetInData(index+1):], l.Data[l.GetKeyOffsetInData(index):l.GetKeyOffsetInData(int(l.N))])
-	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(offset+int(unsafe.Sizeof(pair))))
-	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(index):], uint16(offset+len(key)+int(unsafe.Sizeof(pair))))
+	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+int(unsafe.Sizeof(extraOffset))))
 
-	l.Nbytes += uint16(len(key) + len(value) + int(unsafe.Sizeof(pair)))
+	copy(l.Data[l.GetValueOffsetInData(int(l.N)):], l.Data[l.GetValueOffsetInData(int(l.N)-1):l.GetValueOffsetInData(index-1)])
+	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(index):], uint16(valueOffset-int(unsafe.Sizeof(extraOffset))))
+
+	l.Head += uint16(len(key) + int(unsafe.Sizeof(extraOffset)))
+	l.Tail += uint16(len(value) + int(unsafe.Sizeof(extraOffset)))
 	l.N++
 
 	return true
@@ -178,27 +186,34 @@ func (dst *Leaf) MoveData(src *Node, where int, from int, to int) {
 }
 
 func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
+	if (index < 0) || (index >= int(l.N)) {
+		panic("leaf index out of range")
+	}
+
 	if (len(key) > TreeMaxKeyLength) || (len(value) > TreeMaxValueLength) {
 		return false
 	}
 
-	offset, length := l.GetKeyOffsetAndLength(index)
-	_, valueLength := l.GetValueOffsetAndLength(index)
-	if int(l.Nbytes)-length-valueLength+len(key)+len(value) > len(l.Data) {
+	keyOffset, keyLength := l.GetKeyOffsetAndLength(index)
+	valueOffset, valueLength := l.GetValueOffsetAndLength(index)
+	if int(l.Head)+int(l.Tail)+len(key)+len(value)-keyLength-valueLength > len(l.Data) {
 		return false
 	}
 
-	copy(l.Data[offset+len(key)+len(value):], l.Data[offset+length+valueLength:l.Nbytes])
-	copy(l.Data[offset:], key)
-	copy(l.Data[offset+len(key):], value)
+	copy(l.Data[keyOffset+len(key):], l.Data[keyOffset+keyLength:l.Head])
+	copy(l.Data[keyOffset:], key)
 
-	l.IncValueOffset(index, uint16(len(key)-length))
+	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
+	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)+valueLength:], l.Data[len(l.Data)-int(l.Tail):valueOffset-valueLength])
+	copy(l.Data[valueOffset-len(value):], value)
+
 	for i := index + 1; i < int(l.N); i++ {
-		l.IncKeyOffset(i, uint16(len(key)+len(value)-length-valueLength))
-		l.IncValueOffset(i, uint16(len(key)+len(value)-length-valueLength))
+		l.IncKeyOffset(i, uint16(len(key)-keyLength))
+		l.DecValueOffset(i, uint16(len(value)-valueLength))
 	}
 
-	l.Nbytes += uint16(len(key) + len(value) - length - valueLength)
+	l.Head += uint16(len(key) - keyLength)
+	l.Tail += uint16(len(value) - valueLength)
 	return true
 }
 
