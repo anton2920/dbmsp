@@ -18,7 +18,7 @@ type Node struct {
 }
 
 /* TODO(anton2920): find the best constant for time-space tradeoff. */
-const ExtraOffsetAfter = 8
+const NodeExtraOffsetAfter = 8
 
 func init() {
 	var page Page
@@ -55,11 +55,11 @@ func (n *Node) Init(key []byte, child0 int64, child1 int64) {
 	n.SetChildAt(child0, -1)
 	n.SetChildAt(child1, 0)
 
-	n.Head = uint16(ExtraOffsetAfter * int(unsafe.Sizeof(keyOffset)))
+	n.Head = uint16(NodeExtraOffsetAfter * int(unsafe.Sizeof(keyOffset)))
 	n.Tail = uint16(unsafe.Sizeof(child0)) * 2
 	n.N = 1
 
-	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(ExtraOffsetAfter*int(unsafe.Sizeof(keyOffset))))
+	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(NodeExtraOffsetAfter*int(unsafe.Sizeof(keyOffset))))
 	n.SetKeyAt(key, 0)
 }
 
@@ -121,7 +121,7 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 		return false
 	}
 
-	extraOffset := util.Bool2Int((n.N+1)%ExtraOffsetAfter == 1) * int(unsafe.Sizeof(keyOffset)) * ExtraOffsetAfter
+	extraOffset := util.Bool2Int((n.N+1)%NodeExtraOffsetAfter == 1) * int(unsafe.Sizeof(keyOffset)) * NodeExtraOffsetAfter
 
 	offset, _ := n.GetKeyOffsetAndLength(index)
 	if int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+extraOffset > len(n.Data) {

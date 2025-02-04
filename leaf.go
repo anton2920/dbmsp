@@ -17,6 +17,8 @@ type Leaf struct {
 	Data [PageSize - PageHeaderSize]byte
 }
 
+const LeafExtraOffsetAfter = 8
+
 func init() {
 	var page Page
 	page.Init(PageTypeLeaf)
@@ -47,11 +49,11 @@ func (l *Leaf) Init(key []byte, value []byte) {
 		panic("no space left for key or value")
 	}
 
-	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(0):], uint16(unsafe.Sizeof(keyOffset)))
-	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(0):], uint16(len(l.Data)-int(unsafe.Sizeof(valueOffset))))
+	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(0):], uint16(unsafe.Sizeof(keyOffset))*LeafExtraOffsetAfter)
+	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(0):], uint16(len(l.Data)-int(unsafe.Sizeof(valueOffset))*LeafExtraOffsetAfter))
 
-	l.Head = uint16(len(key) + int(unsafe.Sizeof(keyOffset)))
-	l.Tail = uint16(len(value) + int(unsafe.Sizeof(valueOffset)))
+	l.Head = uint16(len(key) + int(unsafe.Sizeof(keyOffset))*LeafExtraOffsetAfter)
+	l.Tail = uint16(len(value) + int(unsafe.Sizeof(valueOffset))*LeafExtraOffsetAfter)
 	l.N = 1
 
 	l.SetKeyValueAt(key, value, 0)
@@ -137,45 +139,47 @@ func (l *Leaf) DecValueOffset(index int, dec uint16) {
 }
 
 func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
-	var extraOffset uint16
+	var keyValueOffset uint16
 
 	if (len(key) > TreeMaxKeyLength) || (len(value) > TreeMaxValueLength) {
 		return false
 	}
 
+	extraOffset := util.Bool2Int((l.N+1)%LeafExtraOffsetAfter == 1) * int(unsafe.Sizeof(keyValueOffset)) * LeafExtraOffsetAfter
+
 	keyOffset, _ := l.GetKeyOffsetAndLength(index)
 	valueOffset, _ := l.GetValueOffsetAndLength(index)
-	if int(l.Head)+int(l.Tail)+len(key)+len(value) > len(l.Data) {
+	if int(l.Head)+int(l.Tail)+len(key)+len(value)+2*extraOffset > len(l.Data) {
 		return false
 	}
 
-	for i := 0; i < index; i++ {
-		l.IncKeyOffset(i, uint16(unsafe.Sizeof(extraOffset)))
-		l.DecValueOffset(i, uint16(unsafe.Sizeof(extraOffset)))
+	if extraOffset > 0 {
+		for i := 0; i < index; i++ {
+			l.IncKeyOffset(i, uint16(extraOffset))
+			l.DecValueOffset(i, uint16(extraOffset))
+		}
 	}
 	for i := index; i < int(l.N); i++ {
-		l.IncKeyOffset(i, uint16(len(key)+int(unsafe.Sizeof(extraOffset))))
-		l.DecValueOffset(i, uint16(len(value)+int(unsafe.Sizeof(extraOffset))))
+		l.IncKeyOffset(i, uint16(len(key)+extraOffset))
+		l.DecValueOffset(i, uint16(len(value)+extraOffset))
 	}
 
-	copy(l.Data[keyOffset+len(key)+int(unsafe.Sizeof(extraOffset)):], l.Data[keyOffset:l.Head])
-	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+int(unsafe.Sizeof(extraOffset)):], l.Data[l.GetKeyOffsetInData(int(l.N)):keyOffset])
-	copy(l.Data[keyOffset+int(unsafe.Sizeof(extraOffset)):], key)
+	copy(l.Data[keyOffset+len(key)+extraOffset:], l.Data[keyOffset:l.Head])
+	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+extraOffset:], l.Data[l.GetKeyOffsetInData(int(l.N)):keyOffset])
+	copy(l.Data[keyOffset+extraOffset:], key)
 
-	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
-	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)-int(unsafe.Sizeof(extraOffset)):], l.Data[len(l.Data)-int(l.Tail):valueOffset])
-	/* TODO(anton2920): maybe we don't need -1 */
-	copy(l.Data[valueOffset-int(unsafe.Sizeof(extraOffset)):], l.Data[valueOffset:l.GetValueOffsetInData(int(l.N)-1)])
-	copy(l.Data[valueOffset-len(value)-int(unsafe.Sizeof(extraOffset)):], value)
+	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)-extraOffset:], l.Data[len(l.Data)-int(l.Tail):valueOffset])
+	copy(l.Data[valueOffset-extraOffset:], l.Data[valueOffset:l.GetValueOffsetInData(int(l.N)-1)])
+	copy(l.Data[valueOffset-len(value)-extraOffset:], value)
 
 	copy(l.Data[l.GetKeyOffsetInData(index+1):], l.Data[l.GetKeyOffsetInData(index):l.GetKeyOffsetInData(int(l.N))])
-	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+int(unsafe.Sizeof(extraOffset))))
+	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+extraOffset))
 
 	copy(l.Data[l.GetValueOffsetInData(int(l.N)):], l.Data[l.GetValueOffsetInData(int(l.N)-1):l.GetValueOffsetInData(index-1)])
-	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(index):], uint16(valueOffset-int(unsafe.Sizeof(extraOffset))))
+	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(index):], uint16(valueOffset-extraOffset))
 
-	l.Head += uint16(len(key) + int(unsafe.Sizeof(extraOffset)))
-	l.Tail += uint16(len(value) + int(unsafe.Sizeof(extraOffset)))
+	l.Head += uint16(len(key) + extraOffset)
+	l.Tail += uint16(len(value) + extraOffset)
 	l.N++
 
 	return true
