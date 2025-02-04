@@ -12,12 +12,13 @@ func Uint16ToBytes(x uint16) []byte {
 	return buf
 }
 
-func BenchmarkNodeInsertAt(b *testing.B) {
+func BenchmarkNodeInsertKeyChildAt(b *testing.B) {
 	var page Page
 	page.Init(PageTypeNode)
 
 	node := page.Node()
 	key := Uint16ToBytes(0)
+
 	b.Run("Prepend", func(b *testing.B) {
 		node.Init(key, 0, 0)
 		for i := 0; i < b.N; i++ {
