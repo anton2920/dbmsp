@@ -12,7 +12,9 @@ type PageHeader struct {
 	Type   uint8
 	N      uint8
 	Nbytes uint16
-	_      [4]byte
+	Head   uint16
+	Tail   uint16
+	// _    [2]byte
 }
 
 const (

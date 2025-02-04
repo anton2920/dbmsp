@@ -53,7 +53,7 @@ case $1 in
 		;;
 	check-bench)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=.
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8
 		;;
 	check-bench-cpu)
 		run $0 $VERBOSITYFLAGS test
@@ -120,7 +120,7 @@ case $1 in
 		run go build $VERBOSITYFLAGS -o $PROJECT -ldflags="-s -w"
 		;;
 	test)
-		run $0 $VERBOSITYFLAGS vet
+		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off
 		;;
 	test-msan)

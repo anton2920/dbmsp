@@ -12,7 +12,7 @@ import (
 type Node struct {
 	PageHeader
 
-	/* Data is structured as follows: | N*sizeof(int64) bytes of children | N*sizeof(uint16) bytes of keyOffsets | keys... | */
+	/* Data is structured as follows: | N*sizeof(uint16) bytes of keyOffsets | keys... | ...empty space... | N*sizeof(int64) bytes of children | */
 	Data [PageSize - PageHeaderSize]byte
 }
 
@@ -51,10 +51,11 @@ func (n *Node) Init(key []byte, child0 int64, child1 int64) {
 	n.SetChildAt(child0, -1)
 	n.SetChildAt(child1, 0)
 
-	n.Nbytes = uint16(int(unsafe.Sizeof(child0))*2 + int(unsafe.Sizeof(keyOffset)))
+	n.Head = uint16(unsafe.Sizeof(keyOffset))
+	n.Tail = uint16(unsafe.Sizeof(child0)) * 2
 	n.N = 1
 
-	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(int(unsafe.Sizeof(child0))*2+int(unsafe.Sizeof(keyOffset))))
+	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(int(unsafe.Sizeof(keyOffset))))
 	n.SetKeyAt(key, 0)
 }
 
@@ -72,7 +73,12 @@ func (n *Node) Find(key []byte) int {
 
 func (n *Node) GetChildOffsetInData(index int) int {
 	var i int64
-	return int(unsafe.Sizeof(i)) * (index + 1)
+	return len(n.Data) - (index+2)*int(unsafe.Sizeof(i))
+}
+
+func (n *Node) GetKeyOffsetInData(index int) int {
+	var keyOffset uint16
+	return int(unsafe.Sizeof(keyOffset)) * index
 }
 
 func (n *Node) GetKeyOffsetAndLength(index int) (offset int, length int) {
@@ -82,17 +88,12 @@ func (n *Node) GetKeyOffsetAndLength(index int) (offset int, length int) {
 		length = int(binary.LittleEndian.Uint16(n.Data[n.GetKeyOffsetInData(index+1):])) - offset
 	case index == int(n.N)-1:
 		offset = int(binary.LittleEndian.Uint16(n.Data[n.GetKeyOffsetInData(index):]))
-		length = int(n.Nbytes) - offset
+		length = int(n.Head) - offset
 	case index > int(n.N)-1:
-		offset = int(n.Nbytes)
+		offset = int(n.Head)
 		length = 0
 	}
 	return
-}
-
-func (n *Node) GetKeyOffsetInData(index int) int {
-	var keyOffset uint16
-	return n.GetChildOffsetInData(int(n.N)) + int(unsafe.Sizeof(keyOffset))*index
 }
 
 func (n *Node) GetChildAt(index int) int64 {
@@ -117,30 +118,29 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 	}
 
 	offset, _ := n.GetKeyOffsetAndLength(index)
-	if int(n.Nbytes)+len(key)+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child)) > len(n.Data) {
+	if int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+int(unsafe.Sizeof(keyOffset)) > len(n.Data) {
 		return false
 	}
 
 	for i := 0; i < index; i++ {
-		n.IncKeyOffset(i, uint16(int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child))))
+		n.IncKeyOffset(i, uint16(unsafe.Sizeof(keyOffset)))
 	}
 	for i := index; i < int(n.N); i++ {
-		n.IncKeyOffset(i, uint16(len(key)+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child))))
+		n.IncKeyOffset(i, uint16(len(key)+int(unsafe.Sizeof(keyOffset))))
 	}
 
-	/* TODO(anton2920): find minimum number of bytes so that this key is still distinct from other keys. */
-	copy(n.Data[offset+len(key)+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child)):], n.Data[offset:n.Nbytes])
-	copy(n.Data[n.GetKeyOffsetInData(int(n.N))+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child)):], n.Data[n.GetKeyOffsetInData(int(n.N)):offset])
-	copy(n.Data[offset+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child)):], key)
+	copy(n.Data[offset+len(key)+int(unsafe.Sizeof(keyOffset)):], n.Data[offset:n.Head])
+	copy(n.Data[n.GetKeyOffsetInData(int(n.N))+int(unsafe.Sizeof(keyOffset)):], n.Data[n.GetKeyOffsetInData(int(n.N)):offset])
+	copy(n.Data[offset+int(unsafe.Sizeof(keyOffset)):], key)
 
-	copy(n.Data[n.GetKeyOffsetInData(index+1)+int(unsafe.Sizeof(child)):], n.Data[n.GetKeyOffsetInData(index):n.GetKeyOffsetInData(int(n.N))])
-	copy(n.Data[n.GetKeyOffsetInData(0)+int(unsafe.Sizeof(child)):], n.Data[n.GetKeyOffsetInData(0):n.GetKeyOffsetInData(index)])
-	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(index)+int(unsafe.Sizeof(child)):], uint16(offset+int(unsafe.Sizeof(keyOffset))+int(unsafe.Sizeof(child))))
+	copy(n.Data[n.GetKeyOffsetInData(index+1):], n.Data[n.GetKeyOffsetInData(index):n.GetKeyOffsetInData(int(n.N))])
+	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(index):], uint16(offset+int(unsafe.Sizeof(keyOffset))))
 
-	copy(n.Data[n.GetChildOffsetInData(index+1):], n.Data[n.GetChildOffsetInData(index):n.GetChildOffsetInData(int(n.N))])
+	copy(n.Data[n.GetChildOffsetInData(int(n.N)):], n.Data[n.GetChildOffsetInData(int(n.N)-1):n.GetChildOffsetInData(index-1)])
 	n.SetChildAt(child, index)
 
-	n.Nbytes += uint16(len(key) + int(unsafe.Sizeof(keyOffset)) + int(unsafe.Sizeof(child)))
+	n.Head += uint16(len(key) + int(unsafe.Sizeof(keyOffset)))
+	n.Tail += uint16(unsafe.Sizeof(child))
 	n.N++
 
 	return true
@@ -159,19 +159,20 @@ func (n *Node) SetKeyAt(key []byte, index int) bool {
 	}
 
 	offset, length := n.GetKeyOffsetAndLength(index)
-	if int(n.Nbytes)-length+len(key) > len(n.Data) {
+	if int(n.Head)+int(n.Tail)+len(key)-length > len(n.Data) {
 		return false
 	}
-
-	/* TODO(anton2920): find minimum number of bytes so that this key is still distinct from other keys. */
-	copy(n.Data[offset+len(key):], n.Data[offset+length:n.Nbytes])
-	copy(n.Data[offset:], key)
 
 	for i := index + 1; i < int(n.N); i++ {
 		n.IncKeyOffset(i, uint16(len(key)-length))
 	}
 
-	n.Nbytes += uint16(len(key) - length)
+	/* TODO(anton2920): find the minimum number of bytes so that this key is still distinct from other keys. */
+	/* TODO(anton2920): think about allowing fragmentation. */
+	copy(n.Data[offset+len(key):], n.Data[offset+length:n.Head])
+	copy(n.Data[offset:], key)
+
+	n.Head += uint16(len(key) - length)
 	return true
 }
 
