@@ -22,7 +22,7 @@ printv()
 }
 
 # Switch to Go 1.4.
-# . go14-env
+. go14-env
 
 # NOTE(anton2920): don't like Google spying on me.
 GOPROXY=direct; export GOPROXY
@@ -57,7 +57,7 @@ case $1 in
 		;;
 	check-bench-cpu)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof -test.count=8
 		;;
 	check-bench-mem)
 		run $0 $VERBOSITYFLAGS test

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"unsafe"
 
 	"github.com/anton2920/gofa/debug"
@@ -59,6 +60,11 @@ func (l *Leaf) Init(key []byte, value []byte) {
 	l.SetKeyValueAt(key, value, 0)
 }
 
+func (l *Leaf) GetKeyAt(index int) []byte {
+	offset, length := l.GetKeyOffsetAndLength(index)
+	return l.Data[offset : offset+length]
+}
+
 func (l *Leaf) GetKeyOffsetAndLength(index int) (offset int, length int) {
 	switch {
 	case index < int(l.N)-1:
@@ -72,6 +78,20 @@ func (l *Leaf) GetKeyOffsetAndLength(index int) (offset int, length int) {
 		length = 0
 	}
 	return
+}
+
+func (l *Leaf) GetKeyOffsetInData(index int) int {
+	var keyOffset uint16
+	return int(unsafe.Sizeof(keyOffset)) * index
+}
+
+func (l *Leaf) GetKeyOffsets() []uint16 {
+	return *(*[]uint16)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&l.Data[0])), Len: int(l.N), Cap: int(l.N)}))
+}
+
+func (l *Leaf) GetValueAt(index int) []byte {
+	offset, length := l.GetValueOffsetAndLength(index)
+	return l.Data[offset-length : offset]
 }
 
 /* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
@@ -91,34 +111,15 @@ func (l *Leaf) GetValueOffsetAndLength(index int) (offset int, length int) {
 	return
 }
 
-func (l *Leaf) GetKeyOffsetInData(index int) int {
-	var keyOffset uint16
-	return int(unsafe.Sizeof(keyOffset)) * index
-}
-
 func (l *Leaf) GetValueOffsetInData(index int) int {
 	var valueOffset uint16
 	return len(l.Data) - int(unsafe.Sizeof(valueOffset))*(index+1)
 }
 
-func (l *Leaf) GetKeyAt(index int) []byte {
-	offset, length := l.GetKeyOffsetAndLength(index)
-	return l.Data[offset : offset+length]
-}
+func (l *Leaf) GetValueOffsets() []uint16 {
+	var valueOffset uint16
 
-func (l *Leaf) GetValueAt(index int) []byte {
-	offset, length := l.GetValueOffsetAndLength(index)
-	return l.Data[offset-length : offset]
-}
-
-func (l *Leaf) IncKeyOffset(index int, inc uint16) {
-	buffer := l.Data[l.GetKeyOffsetInData(index):]
-	binary.LittleEndian.PutUint16(buffer, binary.LittleEndian.Uint16(buffer)+inc)
-}
-
-func (l *Leaf) DecValueOffset(index int, dec uint16) {
-	buffer := l.Data[l.GetValueOffsetInData(index):]
-	binary.LittleEndian.PutUint16(buffer, binary.LittleEndian.Uint16(buffer)-dec)
+	return *(*[]uint16)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&l.Data[0])) + uintptr(len(l.Data)) - unsafe.Sizeof(valueOffset)*uintptr(l.N), Len: int(l.N), Cap: int(l.N)}))
 }
 
 func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
@@ -136,27 +137,29 @@ func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
 		return false
 	}
 
+	keyOffsets := l.GetKeyOffsets()
+	valueOffsets := l.GetValueOffsets()
 	if extraOffset > 0 {
 		for i := 0; i < index; i++ {
-			l.IncKeyOffset(i, uint16(extraOffset))
-			l.DecValueOffset(i, uint16(extraOffset))
+			keyOffsets[i] += uint16(extraOffset)
+			valueOffsets[int(l.N)-1-i] -= uint16(extraOffset)
 		}
 	}
 	for i := index; i < int(l.N); i++ {
-		l.IncKeyOffset(i, uint16(len(key)+extraOffset))
-		l.DecValueOffset(i, uint16(len(value)+extraOffset))
+		keyOffsets[i] += uint16(len(key) + extraOffset)
+		valueOffsets[int(l.N)-1-i] -= uint16(len(value) + extraOffset)
 	}
 
 	copy(l.Data[keyOffset+len(key)+extraOffset:], l.Data[keyOffset:l.Head])
 	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+extraOffset:], l.Data[l.GetKeyOffsetInData(int(l.N)):keyOffset])
 	copy(l.Data[keyOffset+extraOffset:], key)
 
+	copy(l.Data[l.GetKeyOffsetInData(index+1):], l.Data[l.GetKeyOffsetInData(index):l.GetKeyOffsetInData(int(l.N))])
+	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+extraOffset))
+
 	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)-extraOffset:], l.Data[len(l.Data)-int(l.Tail):valueOffset])
 	copy(l.Data[valueOffset-extraOffset:], l.Data[valueOffset:l.GetValueOffsetInData(int(l.N)-1)])
 	copy(l.Data[valueOffset-len(value)-extraOffset:], value)
-
-	copy(l.Data[l.GetKeyOffsetInData(index+1):], l.Data[l.GetKeyOffsetInData(index):l.GetKeyOffsetInData(int(l.N))])
-	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+extraOffset))
 
 	copy(l.Data[l.GetValueOffsetInData(int(l.N)):], l.Data[l.GetValueOffsetInData(int(l.N)-1):l.GetValueOffsetInData(index-1)])
 	binary.LittleEndian.PutUint16(l.Data[l.GetValueOffsetInData(index):], uint16(valueOffset-extraOffset))
@@ -194,9 +197,11 @@ func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)+valueLength:], l.Data[len(l.Data)-int(l.Tail):valueOffset-valueLength])
 	copy(l.Data[valueOffset-len(value):], value)
 
+	keyOffsets := l.GetKeyOffsets()
+	valueOffsets := l.GetValueOffsets()
 	for i := index + 1; i < int(l.N); i++ {
-		l.IncKeyOffset(i, uint16(len(key)-keyLength))
-		l.DecValueOffset(i, uint16(len(value)-valueLength))
+		keyOffsets[i] += uint16(len(key) - keyLength)
+		valueOffsets[int(l.N)-1-i] -= uint16(len(value) - valueLength)
 	}
 
 	l.Head += uint16(len(key) - keyLength)
