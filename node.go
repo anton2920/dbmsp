@@ -63,18 +63,6 @@ func (n *Node) Init(key []byte, child0 int64, child1 int64) {
 	n.SetKeyAt(key, 0)
 }
 
-func (n *Node) Find(key []byte) int {
-	if res := bytes.Compare(key, n.GetKeyAt(int(n.N)-1)); res >= 0 {
-		return int(n.N) - 1
-	}
-	for i := 0; i < int(n.N); i++ {
-		if bytes.Compare(key, n.GetKeyAt(i)) < 0 {
-			return i - 1
-		}
-	}
-	return int(n.N) - 1
-}
-
 func (n *Node) GetChildOffsetInData(index int) int {
 	var i int64
 	return len(n.Data) - (index+2)*int(unsafe.Sizeof(i))
@@ -155,6 +143,7 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 }
 
 func (dst *Node) MoveData(src *Node, where int, from int, to int) {
+	panic("not implemented")
 }
 
 func (n *Node) SetChildAt(offset int64, index int) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	_ "github.com/anton2920/gofa/intel"
 	"github.com/anton2920/gofa/trace"
@@ -18,13 +19,18 @@ var (
 func main() {
 	var kv KV
 
+	if err := kv.Init(new(MemoryPager)); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize KV: %v\n", err)
+		os.Exit(1)
+	}
+
 	println("INSERT 1!!!")
 	trace.BeginProfile()
 	for _, key := range InsertKeys {
-		//fmt.Println("I:", key)
+		fmt.Println("I:", key)
 		kv.Set(key, 0)
-		//fmt.Println(kv)
+		fmt.Println(kv.Tree)
 	}
 	trace.EndAndPrintProfile()
-	fmt.Println(kv)
+	fmt.Println(kv.Tree)
 }

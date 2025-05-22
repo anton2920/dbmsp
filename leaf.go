@@ -59,23 +59,6 @@ func (l *Leaf) Init(key []byte, value []byte) {
 	l.SetKeyValueAt(key, value, 0)
 }
 
-/* TODO(anton2920): optimize using SIMD or some form of batch comparison. */
-func (l *Leaf) Find(key []byte) (int, bool) {
-	if l.N == 0 {
-		return -1, false
-	} else if res := bytes.Compare(key, l.GetKeyAt(int(l.N)-1)); res >= 0 {
-		return int(l.N) - 1 - util.Bool2Int(res == 0), res == 0
-	}
-
-	for i := 0; i < int(l.N); i++ {
-		if res := bytes.Compare(key, l.GetKeyAt(i)); res <= 0 {
-			return i - 1, res == 0
-		}
-	}
-
-	return int(l.N) - 1, false
-}
-
 func (l *Leaf) GetKeyOffsetAndLength(index int) (offset int, length int) {
 	switch {
 	case index < int(l.N)-1:
@@ -185,8 +168,8 @@ func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
 	return true
 }
 
-func (dst *Leaf) MoveData(src *Node, where int, from int, to int) {
-
+func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
+	// panic("not implemented")
 }
 
 func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
@@ -218,6 +201,19 @@ func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 
 	l.Head += uint16(len(key) - keyLength)
 	l.Tail += uint16(len(value) - valueLength)
+	return true
+}
+
+func (l *Leaf) SetValueAt(value []byte, index int) bool {
+	if (index < 0) || (index >= int(l.N)) {
+		panic("leaf index out of range")
+	}
+
+	if len(value) > TreeMaxValueLength {
+		return false
+	}
+
+	panic("not implemented")
 	return true
 }
 

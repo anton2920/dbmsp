@@ -12,7 +12,7 @@ type Meta struct {
 
 	Root int64
 
-	_ [PageSize - PageHeaderSize - 3*unsafe.Sizeof(0)]byte
+	_ [PageSize - PageHeaderSize - 3*unsafe.Sizeof(int64(0))]byte
 }
 
 func (m *Meta) Page() *Page {

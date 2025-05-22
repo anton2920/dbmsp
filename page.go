@@ -6,10 +6,12 @@ import (
 	"unsafe"
 )
 
+type PageType uint8
+
 type Page [PageSize]byte
 
 type PageHeader struct {
-	Type uint8
+	Type PageType
 	N    uint8
 	Head uint16
 	Tail uint16
@@ -22,13 +24,13 @@ const (
 )
 
 const (
-	PageTypeNone = uint8(iota)
+	PageTypeNone = PageType(iota)
 	PageTypeMeta
 	PageTypeNode
 	PageTypeLeaf
 )
 
-func (p *Page) Init(typ byte) {
+func (p *Page) Init(typ PageType) {
 	var clr Page
 	copy(p[:], clr[:])
 
@@ -38,6 +40,10 @@ func (p *Page) Init(typ byte) {
 
 func (p *Page) Header() *PageHeader {
 	return (*PageHeader)(unsafe.Pointer(p))
+}
+
+func (p *Page) Type() PageType {
+	return p.Header().Type
 }
 
 func (p *Page) Meta() *Meta {
