@@ -370,9 +370,8 @@ forOffset:
 			var newLeaf Page
 			newLeaf.Init(PageTypeLeaf)
 
-			leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
-
 			newKey := leaf.GetKeyAt(half)
+			leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
 			newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
 			if err != nil {
 				return fmt.Errorf("failed to write new leaf: %v", err)
@@ -418,9 +417,8 @@ forOffset:
 				var newNode Page
 				newNode.Init(PageTypeNode)
 
-				node.MoveData(newNode.Node(), -1, half, -1)
-
 				newKey = node.GetKeyAt(half)
+				node.MoveData(newNode.Node(), -1, half, -1)
 				newPage, err = tx.writePage(&newNode, TreeNewPageOffset)
 				if err != nil {
 					return fmt.Errorf("failed to write new node: %v", err)

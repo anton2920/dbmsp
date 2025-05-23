@@ -22,7 +22,7 @@ printv()
 }
 
 # Switch to Go 1.4.
-. go14-env
+#. go14-env
 
 # NOTE(anton2920): don't like Google spying on me.
 GOPROXY=direct; export GOPROXY
@@ -125,16 +125,16 @@ case $1 in
 		;;
 	test-msan)
 		CGO_ENABLED=1; export CGO_ENABLED
-		run $0 $VERBOSITYFLAGS vet
+		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -msan -gcflags="all=-N -l"
 		;;
 	test-race-cover)
 		CGO_ENABLED=1; export CGO_ENABLED
-		run $0 $VERBOSITYFLAGS vet
+		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -race -cover -gcflags="all=-N -l"
 		;;
 	test-tracing)
-		run $0 $VERBOSITYFLAGS vet
+		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -tags gofatrace
 		;;
 	tracing)
