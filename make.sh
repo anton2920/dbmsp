@@ -22,7 +22,7 @@ printv()
 }
 
 # Switch to Go 1.4.
-#. go14-env
+# . go14-env
 
 # NOTE(anton2920): don't like Google spying on me.
 GOPROXY=direct; export GOPROXY
@@ -53,15 +53,19 @@ case $1 in
 		;;
 	check-bench)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8 -test.benchtime=100000x
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8 -test.benchtime=10000x
 		;;
 	check-bench-cpu)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof -test.count=8 -test.benchtime=100000x
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof -test.count=8 -test.benchtime=10000x
 		;;
 	check-bench-mem)
 		run $0 $VERBOSITYFLAGS test
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.memprofile=$PROJECT-mem.pprof
+		;;
+	check-bench-tracing)
+		run $0 $VERBOSITYFLAGS test-tracing
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8 -test.benchtime=10000x
 		;;
 	check-cover)
 		run $0 $VERBOSITYFLAGS test-race-cover

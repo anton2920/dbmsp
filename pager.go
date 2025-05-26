@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/anton2920/gofa/trace"
 )
 
 type Pager interface {
@@ -16,6 +18,8 @@ type MemoryPager struct {
 var _ Pager = new(MemoryPager)
 
 func (p *MemoryPager) ReadPagesAt(pages []Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
 	if offset%PageSize != 0 {
 		return fmt.Errorf("offset must be a multiple of PageSize")
 	}
@@ -33,6 +37,8 @@ func (p *MemoryPager) ReadPagesAt(pages []Page, offset int64) error {
 }
 
 func (p *MemoryPager) WritePagesAt(pages []Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
 	if offset%PageSize != 0 {
 		return fmt.Errorf("offset must be a multiple of PageSize")
 	}

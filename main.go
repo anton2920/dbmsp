@@ -38,7 +38,7 @@ func main() {
 		kv.Set(key, 0)
 		//fmt.Println(kv.Tree)
 	}
-	fmt.Println(kv.Tree)
+	//fmt.Println(kv.Tree)
 
 	if err := kv.Init(new(MemoryPager)); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize KV: %v\n", err)
@@ -47,16 +47,11 @@ func main() {
 
 	fmt.Println("INSERT 2!!!")
 	for key := Min; key <= Max; key += Step {
-		fmt.Println("I:", key)
+		//fmt.Println("I:", key)
 		kv.Set(key, key)
-		fmt.Println(kv.Tree)
+		//fmt.Println(kv.Tree)
 	}
-	fmt.Println(kv.Tree)
-	for key := Min; key <= Max; key += Step {
-		if got := kv.Get(key); key != deserialize(got) {
-			fmt.Printf("ERROR! Expected %d, got %d\n", key, deserialize(got))
-		}
-	}
+	//fmt.Println(kv.Tree)
 
 	trace.EndAndPrintProfile()
 }

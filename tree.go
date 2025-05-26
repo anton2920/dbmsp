@@ -73,6 +73,8 @@ func duplicate(buffer []byte, x []byte) []byte {
 }
 
 func leafFind(pager Pager, leaf *Leaf, key []byte) (int, bool) {
+	defer trace.End(trace.Begin(""))
+
 	if leaf.N == 0 {
 		return -1, false
 	} else if res := bytes.Compare(key, leaf.GetKeyAt(int(leaf.N)-1)); res >= 0 {
@@ -89,7 +91,7 @@ func leafFind(pager Pager, leaf *Leaf, key []byte) (int, bool) {
 }
 
 func nodeFind(pager Pager, node *Node, key []byte) int {
-	_ = pager
+	defer trace.End(trace.Begin(""))
 
 	if res := bytes.Compare(key, node.GetKeyAt(int(node.N)-1)); res >= 0 {
 		return int(node.N) - 1
@@ -107,6 +109,8 @@ func slice2Int(buf []byte) int {
 }
 
 func (t *Tree) Init(pager Pager) error {
+	defer trace.End(trace.Begin(""))
+
 	t.Pager = pager
 	t.Meta.Init(PageTypeMeta)
 
@@ -142,6 +146,8 @@ func (t *Tree) Init(pager Pager) error {
 }
 
 func (t *Tree) BeginTx() *TreeTx {
+	defer trace.End(trace.Begin(""))
+
 	var tx TreeTx
 
 	tx.Tree = t
@@ -205,6 +211,8 @@ func (t *Tree) String() string {
 }
 
 func (tx *TreeTx) readPage(page *Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
 	if offset < TreeTxMaxPages {
 		*page = tx.Pages[offset]
 		return nil
@@ -213,6 +221,8 @@ func (tx *TreeTx) readPage(page *Page, offset int64) error {
 }
 
 func (tx *TreeTx) writePage(page *Page, offset int64) (int64, error) {
+	defer trace.End(trace.Begin(""))
+
 	n := int64(len(tx.Pages))
 
 	switch offset {
@@ -283,6 +293,8 @@ func (tx *TreeTx) Del(key []byte) error {
 }
 
 func (tx *TreeTx) Get(key []byte) []byte {
+	defer trace.End(trace.Begin(""))
+
 	var page Page
 	var v []byte
 
@@ -311,6 +323,8 @@ func (tx *TreeTx) Get(key []byte) []byte {
 }
 
 func (tx *TreeTx) Has(key []byte) bool {
+	defer trace.End(trace.Begin(""))
+
 	var page Page
 
 	offset := tx.Root
