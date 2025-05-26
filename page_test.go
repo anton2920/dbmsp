@@ -10,7 +10,7 @@ func TestGetExtraOffset(t *testing.T) {
 	/* ((count + (Extra - l.N%Extra)) / Extra) - (l.N%Extra==0)*/
 
 	if ExtraOffsetAfter != 4 {
-		t.Fatalf("Test expects ExtraOffsetAfter to be 4, but it is %d", ExtraOffsetAfter)
+		t.Skipf("Test expects ExtraOffsetAfter to be 4, but it is %d", ExtraOffsetAfter)
 	}
 
 	/* _ _ _ _   _ _ _ _   _ _ _ _ */

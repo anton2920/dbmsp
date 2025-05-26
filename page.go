@@ -33,14 +33,14 @@ const (
 )
 
 /* TODO(anton2920): find the best constant for time-space tradeoff. */
-const ExtraOffsetAfter = 4
+const ExtraOffsetAfter = 16
 
 func (p *Page) Init(typ PageType) {
-	var clr Page
-	copy(p[:], clr[:])
-
 	hdr := p.Header()
 	hdr.Type = typ
+	hdr.N = 0
+	hdr.Head = 0
+	hdr.Tail = 0
 }
 
 func (p *Page) Header() *PageHeader {

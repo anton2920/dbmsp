@@ -6,11 +6,11 @@ import (
 
 const N = 10000
 
-func testKVGet(t *testing.T, g Generator) {
+func testKVGet(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		t.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -30,11 +30,11 @@ func testKVGet(t *testing.T, g Generator) {
 	}
 }
 
-func testKVDel(t *testing.T, g Generator) {
+func testKVDel(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		t.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -54,11 +54,11 @@ func testKVDel(t *testing.T, g Generator) {
 	}
 }
 
-func testKVHas(t *testing.T, g Generator) {
+func testKVHas(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		t.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -77,11 +77,11 @@ func testKVHas(t *testing.T, g Generator) {
 	}
 }
 
-func testKVSet(t *testing.T, g Generator) {
+func testKVSet(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		t.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func testKVSet(t *testing.T, g Generator) {
 func TestKV(t *testing.T) {
 	ops := [...]struct {
 		Name string
-		Func func(*testing.T, Generator)
+		Func func(*testing.T, Generator, Pager)
 	}{
 		{"Get", testKVGet},
 		// 	{"Del", testKVDel},
@@ -123,18 +123,28 @@ func TestKV(t *testing.T) {
 				generator.Reset()
 				t.Run(generator.String(), func(t *testing.T) {
 					t.Parallel()
-					op.Func(t, generator)
+					t.Run("MemoryPager", func(t *testing.T) {
+						op.Func(t, generator, new(MemoryPager))
+					})
+					t.Run("FilePager", func(t *testing.T) {
+						filePager, err := FilePagerNew(generator.String() + "_test.kv")
+						if err != nil {
+							t.Fatalf("Failed to create new file pager: %v", err)
+						}
+						defer filePager.Close()
+						op.Func(t, generator, filePager)
+					})
 				})
 			}
 		})
 	}
 }
 
-func benchmarkKVGet(b *testing.B, g Generator) {
+func benchmarkKVGet(b *testing.B, g Generator, pager Pager) {
 	b.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		b.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -149,11 +159,11 @@ func benchmarkKVGet(b *testing.B, g Generator) {
 	}
 }
 
-func benchmarkKVDel(b *testing.B, g Generator) {
+func benchmarkKVDel(b *testing.B, g Generator, pager Pager) {
 	b.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		b.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -168,11 +178,11 @@ func benchmarkKVDel(b *testing.B, g Generator) {
 	}
 }
 
-func benchmarkKVSet(b *testing.B, g Generator) {
+func benchmarkKVSet(b *testing.B, g Generator, pager Pager) {
 	b.Helper()
 
 	var kv KV
-	if err := kv.Init(new(MemoryPager)); err != nil {
+	if err := kv.Init(pager); err != nil {
 		b.Fatalf("Failed to initialize KV: %v", err)
 	}
 
@@ -184,7 +194,7 @@ func benchmarkKVSet(b *testing.B, g Generator) {
 func BenchmarkKV(b *testing.B) {
 	ops := [...]struct {
 		Name string
-		Func func(*testing.B, Generator)
+		Func func(*testing.B, Generator, Pager)
 	}{
 		{"Get", benchmarkKVGet},
 		//	{"Del", benchmarkKVDel},
@@ -203,7 +213,17 @@ func BenchmarkKV(b *testing.B) {
 			for _, generator := range generators {
 				generator.Reset()
 				b.Run(generator.String(), func(b *testing.B) {
-					op.Func(b, generator)
+					b.Run("MemoryPager", func(b *testing.B) {
+						op.Func(b, generator, new(MemoryPager))
+					})
+					b.Run("FilePager", func(b *testing.B) {
+						filePager, err := FilePagerNew(generator.String() + "_test.kv")
+						if err != nil {
+							b.Fatalf("Failed to create new file pager: %v", err)
+						}
+						defer filePager.Close()
+						op.Func(b, generator, filePager)
+					})
 				})
 			}
 		})

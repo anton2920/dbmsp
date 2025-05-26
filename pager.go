@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/anton2920/gofa/trace"
 )
@@ -52,6 +54,53 @@ func (p *MemoryPager) WritePagesAt(pages []Page, offset int64) error {
 		p.Pages = append(p.Pages, pages...)
 	} else {
 		copy(p.Pages[index:], pages)
+	}
+	return nil
+}
+
+type FilePager struct {
+	File *os.File
+}
+
+var _ Pager = new(FilePager)
+
+func FilePagerNew(path string) (*FilePager, error) {
+	var err error
+
+	p := new(FilePager)
+	p.File, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open/create file for pager: %v", err)
+	}
+
+	return p, nil
+}
+
+func (p *FilePager) Close() {
+	p.File.Close()
+}
+
+func (p *FilePager) ReadPagesAt(pages []Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
+	if _, err := p.File.ReadAt(Pages2Bytes(pages), offset); (err != nil) && (err != io.EOF) {
+		return fmt.Errorf("failed to read %d pages at %d: %v", len(pages), offset, err)
+	}
+	return nil
+}
+
+func (p *FilePager) WritePagesAt(pages []Page, offset int64) error {
+	defer trace.End(trace.Begin(""))
+
+	if _, err := p.File.WriteAt(Pages2Bytes(pages), offset); err != nil {
+		return fmt.Errorf("failed to write %d pages at %d: %v", len(pages), offset, err)
+	}
+	if false {
+		defer trace.End(trace.Begin("main.WritePagesAt.Sync"))
+
+		if err := p.File.Sync(); err != nil {
+			return fmt.Errorf("failed to sync writes to disk: %v", err)
+		}
 	}
 	return nil
 }

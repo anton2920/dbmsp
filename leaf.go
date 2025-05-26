@@ -304,7 +304,21 @@ func (l *Leaf) SetValueAt(value []byte, index int) bool {
 		panic("leaf index out of range")
 	}
 
-	panic("not implemented")
+	valueOffset, valueLength := l.GetValueOffsetAndLength(index)
+	if int(l.Head)+int(l.Tail)+len(value)-valueLength > len(l.Data) {
+		return false
+	}
+
+	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
+	copy(l.Data[len(l.Data)-int(l.Tail)-len(value)+valueLength:], l.Data[len(l.Data)-int(l.Tail):valueOffset-valueLength])
+	copy(l.Data[valueOffset-len(value):], value)
+
+	valueOffsets := l.GetValueOffsets()
+	for i := index + 1; i < int(l.N); i++ {
+		valueOffsets[int(l.N)-1-i] -= uint16(len(value) - valueLength)
+	}
+
+	l.Tail += uint16(len(value) - valueLength)
 	return true
 }
 
