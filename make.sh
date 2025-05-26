@@ -53,11 +53,11 @@ case $1 in
 		;;
 	check-bench)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8 -test.benchtime=100000x
 		;;
 	check-bench-cpu)
 		run $0 $VERBOSITYFLAGS test
-		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof -test.count=8
+		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.cpuprofile=$PROJECT-cpu.pprof -test.count=8 -test.benchtime=100000x
 		;;
 	check-bench-mem)
 		run $0 $VERBOSITYFLAGS test

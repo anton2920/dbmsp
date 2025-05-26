@@ -35,13 +35,13 @@ type TreeTx struct {
 	Pages      []Page
 	Offsets    []*int64
 	SearchPath []pathItem
+
+	Buffer []byte
 }
 
 const (
 	// TreeMaxOrder = 1 << 8
-	TreeMaxOrder       = 5
-	TreeMaxKeyLength   = (1 << 16) - 1
-	TreeMaxValueLength = (1 << 16) - 1
+	TreeMaxOrder = 45
 
 	TreeTxMaxPages    = PageSize - 1
 	TreeNewPageOffset = TreeTxMaxPages
@@ -63,6 +63,13 @@ func init() {
 	if (psize != msize) || (psize != nsize) || (psize != lsize) {
 		log.Panicf("[tree]: sizeof(Page) == %d, sizeof(Meta) == %d, sizeof(Node) == %d, sizeof(Leaf) == %d", psize, msize, nsize, lsize)
 	}
+}
+
+func duplicate(buffer []byte, x []byte) []byte {
+	if len(buffer) < len(x) {
+		panic("insufficient space in buffer")
+	}
+	return buffer[:copy(buffer, x)]
 }
 
 func leafFind(pager Pager, leaf *Leaf, key []byte) (int, bool) {
@@ -138,13 +145,39 @@ func (t *Tree) BeginTx() *TreeTx {
 	var tx TreeTx
 
 	tx.Tree = t
+	tx.Buffer = make([]byte, PageSize)
+	meta := t.Meta.Meta()
 
 	tx.Tree.RLock()
-	meta := t.Meta.Meta()
 	tx.Root = meta.Root
 	tx.Tree.RUnlock()
 
 	return &tx
+}
+
+func (t *Tree) Get(key []byte) []byte {
+	tx := t.BeginTx()
+	return tx.Get(key)
+}
+
+func (t *Tree) Del(key []byte) error {
+	tx := t.BeginTx()
+	defer tx.Rollback()
+
+	if err := tx.Del(key); err != nil {
+		return fmt.Errorf("failed to delete key from tree: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit Tx in Del: %v", err)
+	}
+
+	return nil
+}
+
+func (t *Tree) Has(key []byte) bool {
+	tx := t.BeginTx()
+	return tx.Has(key)
 }
 
 func (t *Tree) Set(key []byte, value []byte) error {
@@ -245,7 +278,8 @@ func (tx *TreeTx) Commit() error {
 	return nil
 }
 
-func (tx *TreeTx) Del(key []byte) {
+func (tx *TreeTx) Del(key []byte) error {
+	return nil
 }
 
 func (tx *TreeTx) Get(key []byte) []byte {
@@ -277,6 +311,26 @@ func (tx *TreeTx) Get(key []byte) []byte {
 }
 
 func (tx *TreeTx) Has(key []byte) bool {
+	var page Page
+
+	offset := tx.Root
+	for offset != 0 {
+		if err := tx.readPage(&page, offset); err != nil {
+			log.Panicf("Failed to read page: %v", err)
+		}
+
+		switch page.Type() {
+		case PageTypeNode:
+			node := page.Node()
+			index := nodeFind(tx.Tree.Pager, node, key)
+			offset = node.GetChildAt(index)
+		case PageTypeLeaf:
+			leaf := page.Leaf()
+			_, ok := leafFind(tx.Tree.Pager, leaf, key)
+			return ok
+		}
+	}
+
 	return false
 }
 
@@ -319,7 +373,9 @@ forOffset:
 	if ok {
 		/* Found key, update value. */
 		leaf := page.Leaf()
-		leaf.SetValueAt(value, index+1)
+		if !leaf.SetValueAt(value, index+1) {
+			panic("called 'SetValueAt'")
+		}
 		offset, err = tx.writePage(&page, offset)
 		if err != nil {
 			return fmt.Errorf("failed to write updated leaf: %v", err)
@@ -344,7 +400,11 @@ forOffset:
 		/* TODO(anton2920): leaf may be split in two cases: 1) no space left for new KV-pair; 2) artificial cap on TreeMaxOrder. */
 		leaf := page.Leaf()
 		half := TreeMaxOrder / 2
-		_ = leaf.InsertKeyValueAt(key, value, index+1)
+		if !leaf.InsertKeyValueAt(key, value, index+1) {
+			panic("failed to insert in leaf")
+		}
+		// fmt.Println(tx.Tree)
+
 		if leaf.N < TreeMaxOrder {
 			offset, err = tx.writePage(&page, offset)
 			if err != nil {
@@ -370,7 +430,7 @@ forOffset:
 			var newLeaf Page
 			newLeaf.Init(PageTypeLeaf)
 
-			newKey := leaf.GetKeyAt(half)
+			newKey := duplicate(tx.Buffer, leaf.GetKeyAt(half))
 			leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
 			newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
 			if err != nil {
@@ -389,7 +449,10 @@ forOffset:
 				node := page.Node()
 
 				node.SetChildAt(offset, index)
-				node.InsertKeyChildAt(newKey, newPage, index+1)
+				if !node.InsertKeyChildAt(newKey, newPage, index+1) {
+					panic("failed to insert in node")
+				}
+				//fmt.Println(tx.Tree)
 
 				if node.N < TreeMaxOrder {
 					offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
@@ -417,7 +480,7 @@ forOffset:
 				var newNode Page
 				newNode.Init(PageTypeNode)
 
-				newKey = node.GetKeyAt(half)
+				newKey = duplicate(tx.Buffer, node.GetKeyAt(half))
 				node.MoveData(newNode.Node(), -1, half, -1)
 				newPage, err = tx.writePage(&newNode, TreeNewPageOffset)
 				if err != nil {
@@ -471,7 +534,7 @@ func (tx *TreeTx) stringImpl(buf *bytes.Buffer, offset int64, level int) error {
 		case PageTypeLeaf:
 			leaf := page.Leaf()
 			for i := 0; i < int(leaf.N); i++ {
-				fmt.Fprintf(buf, "%4d", slice2Int(leaf.GetKeyAt(i)))
+				fmt.Fprintf(buf, "(%d: %d) ", slice2Int(leaf.GetKeyAt(i)), slice2Int(leaf.GetValueAt(i)))
 			}
 			buf.WriteRune('\n')
 		}

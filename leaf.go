@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/anton2920/gofa/debug"
-	"github.com/anton2920/gofa/util"
 )
 
 type Leaf struct {
@@ -17,8 +16,6 @@ type Leaf struct {
 	/* Data is structured as follows: | N*sizeof(uint16) bytes of keyOffsets | keys... | ...empty space... | ...values | N*sizeof(uint16) bytes of valueOffsets | */
 	Data [PageSize - PageHeaderSize]byte
 }
-
-const LeafExtraOffsetAfter = 16
 
 func init() {
 	var page Page
@@ -44,13 +41,15 @@ func init() {
 }
 
 func (l *Leaf) GetExtraOffset(count int) int {
-	var keyValueOffset uint16
+	return GetExtraOffset(int(l.N), count)
+}
 
-	if count > 0 {
-		return (((count + (int(l.N) % LeafExtraOffsetAfter) - 1) / LeafExtraOffsetAfter) + util.Bool2Int((int(l.N)%LeafExtraOffsetAfter) == 0)) * int(unsafe.Sizeof(keyValueOffset)) * LeafExtraOffsetAfter
-	} else {
-		return (((-count + (LeafExtraOffsetAfter - (int(l.N) % LeafExtraOffsetAfter))) / LeafExtraOffsetAfter) - util.Bool2Int((int(l.N)%LeafExtraOffsetAfter) == 0)) * int(unsafe.Sizeof(keyValueOffset)) * LeafExtraOffsetAfter
-	}
+func (l *Leaf) GetFirstKeyOffset() int {
+	return GetExtraOffset(0, int(l.N))
+}
+
+func (l *Leaf) GetFirstValueOffset() int {
+	return len(l.Data) - GetExtraOffset(0, int(l.N))
 }
 
 func (l *Leaf) GetKeyAt(index int) []byte {
@@ -116,8 +115,8 @@ func (l *Leaf) GetValueOffsets() []uint16 {
 }
 
 func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
-	if (len(key) > TreeMaxKeyLength) || (len(value) > TreeMaxValueLength) {
-		return false
+	if index > int(l.N) {
+		panic("index out of range for insert")
 	}
 
 	extraOffset := l.GetExtraOffset(1)
@@ -141,7 +140,7 @@ func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
 	}
 
 	copy(l.Data[keyOffset+len(key)+extraOffset:], l.Data[keyOffset:l.Head])
-	copy(l.Data[l.GetKeyOffsetInData(int(l.N))+extraOffset:], l.Data[l.GetKeyOffsetInData(int(l.N)):keyOffset])
+	copy(l.Data[l.GetFirstKeyOffset()+extraOffset:], l.Data[l.GetFirstKeyOffset():keyOffset])
 	copy(l.Data[keyOffset+extraOffset:], key)
 	copy(l.Data[l.GetKeyOffsetInData(index+1):], l.Data[l.GetKeyOffsetInData(index):l.GetKeyOffsetInData(int(l.N))])
 	binary.LittleEndian.PutUint16(l.Data[l.GetKeyOffsetInData(index):], uint16(keyOffset+extraOffset))
@@ -198,38 +197,43 @@ func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
 	if extraOffset > 0 {
 		for i := 0; i < where; i++ {
 			keyOffsets[i] += uint16(extraOffset)
-			valueOffsets[int(dst.N)-1-i] += uint16(extraOffset)
+			valueOffsets[int(dst.N)-1-i] -= uint16(extraOffset)
 		}
 	}
 	for i := where; i < int(dst.N); i++ {
 		keyOffsets[i] += uint16(keyLengths + extraOffset)
-		valueOffsets[int(dst.N)-1-i] += uint16(valueLengths + extraOffset)
+		valueOffsets[int(dst.N)-1-i] -= uint16(valueLengths + extraOffset)
 	}
 
 	copy(dst.Data[whereKeyOffset+keyLengths+extraOffset:], dst.Data[whereKeyOffset:dst.Head])
-	copy(dst.Data[dst.GetKeyOffsetInData(int(dst.N))+extraOffset:], dst.Data[dst.GetKeyOffsetInData(int(dst.N)):whereKeyOffset])
+	copy(dst.Data[dst.GetFirstKeyOffset()+extraOffset:], dst.Data[dst.GetFirstKeyOffset():whereKeyOffset])
 	copy(dst.Data[whereKeyOffset+extraOffset:], src.Data[fromKeyOffset:fromKeyOffset+keyLengths])
 	copy(dst.Data[dst.GetKeyOffsetInData(where+count):], dst.Data[dst.GetKeyOffsetInData(where):dst.GetKeyOffsetInData(int(dst.N))])
 
 	offset := uint16(whereKeyOffset + extraOffset)
 	binary.LittleEndian.PutUint16(dst.Data[dst.GetKeyOffsetInData(where):], offset)
-	for i := where + 1; i < where+count; i++ {
+	w := where + 1
+	for i := from; i < to-1; i++ {
 		_, keyLength := src.GetKeyOffsetAndLength(i)
 		offset += uint16(keyLength)
-		binary.LittleEndian.PutUint16(dst.Data[dst.GetKeyOffsetInData(i):], offset)
+		binary.LittleEndian.PutUint16(dst.Data[dst.GetKeyOffsetInData(w):], offset)
+		w++
 	}
 
 	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
 	copy(dst.Data[len(dst.Data)-int(dst.Tail)-valueLengths-extraOffset:], dst.Data[len(dst.Data)-int(dst.Tail):whereValueOffset])
-	copy(dst.Data[whereValueOffset-extraOffset:], dst.Data[whereValueOffset:dst.GetValueOffsetInData(int(dst.N)-1)])
+	copy(dst.Data[whereValueOffset-extraOffset:], dst.Data[whereValueOffset:dst.GetFirstValueOffset()])
 	copy(dst.Data[whereValueOffset-valueLengths-extraOffset:], src.Data[fromValueOffset-valueLengths:fromValueOffset])
 	copy(dst.Data[dst.GetValueOffsetInData(int(dst.N)+count-1):], dst.Data[dst.GetValueOffsetInData(int(dst.N)-1):dst.GetValueOffsetInData(where-1)])
 
 	offset = uint16(whereValueOffset - extraOffset)
-	for i := where + 1; i < where+count; i++ {
+	binary.LittleEndian.PutUint16(dst.Data[dst.GetValueOffsetInData(where):], offset)
+	w = where + 1
+	for i := from; i < to-1; i++ {
 		_, valueLength := src.GetValueOffsetAndLength(i)
 		offset -= uint16(valueLength)
-		binary.LittleEndian.PutUint16(dst.Data[dst.GetValueOffsetInData(i):], offset)
+		binary.LittleEndian.PutUint16(dst.Data[dst.GetValueOffsetInData(w):], offset)
+		w++
 	}
 
 	dst.Head += uint16(keyLengths + extraOffset)
@@ -244,20 +248,20 @@ func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
 	if extraOffset > 0 {
 		for i := 0; i < from; i++ {
 			keyOffsets[i] -= uint16(extraOffset)
-			valueOffsets[i] -= uint16(extraOffset)
+			valueOffsets[int(src.N)-1-i] += uint16(extraOffset)
 		}
 	}
 	for i := to; i < int(src.N); i++ {
 		keyOffsets[i] -= uint16(keyLengths + extraOffset)
-		valueOffsets[i] -= uint16(valueLengths + extraOffset)
+		valueOffsets[int(src.N)-1-i] += uint16(valueLengths + extraOffset)
 	}
 
 	copy(src.Data[src.GetKeyOffsetInData(from):], src.Data[src.GetKeyOffsetInData(to):src.GetKeyOffsetInData(int(src.N))])
-	copy(src.Data[src.GetKeyOffsetInData(int(src.N))-extraOffset:], src.Data[src.GetKeyOffsetInData(int(src.N)):fromKeyOffset])
+	copy(src.Data[src.GetFirstKeyOffset()-extraOffset:], src.Data[src.GetFirstKeyOffset():fromKeyOffset])
 	copy(src.Data[fromKeyOffset-extraOffset:], src.Data[fromKeyOffset+keyLengths:src.Head])
 
 	copy(src.Data[src.GetValueOffsetInData(from):], src.Data[src.GetValueOffsetInData(int(src.N)-1):src.GetValueOffsetInData(to-1)])
-	copy(src.Data[fromValueOffset+extraOffset:], src.Data[fromValueOffset:src.GetValueOffsetInData(int(src.N)-1)])
+	copy(src.Data[fromValueOffset+extraOffset:], src.Data[fromValueOffset:src.GetFirstValueOffset()])
 	copy(src.Data[len(src.Data)-int(src.Tail)+valueLengths+extraOffset:], src.Data[len(src.Data)-int(src.Tail):fromValueOffset-valueLengths])
 
 	src.Head -= uint16(keyLengths + extraOffset)
@@ -268,10 +272,6 @@ func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
 func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 	if (index < 0) || (index >= int(l.N)) {
 		panic("leaf index out of range")
-	}
-
-	if (len(key) > TreeMaxKeyLength) || (len(value) > TreeMaxValueLength) {
-		return false
 	}
 
 	keyOffset, keyLength := l.GetKeyOffsetAndLength(index)
@@ -302,10 +302,6 @@ func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 func (l *Leaf) SetValueAt(value []byte, index int) bool {
 	if (index < 0) || (index >= int(l.N)) {
 		panic("leaf index out of range")
-	}
-
-	if len(value) > TreeMaxValueLength {
-		return false
 	}
 
 	panic("not implemented")

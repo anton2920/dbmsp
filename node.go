@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/anton2920/gofa/debug"
-	"github.com/anton2920/gofa/util"
 )
 
 type Node struct {
@@ -17,9 +16,6 @@ type Node struct {
 	/* Data is structured as follows: | N*sizeof(uint16) bytes of keyOffsets | keys... | ...empty space... | N*sizeof(int64) bytes of children | */
 	Data [PageSize - PageHeaderSize]byte
 }
-
-/* TODO(anton2920): find the best constant for time-space tradeoff. */
-const NodeExtraOffsetAfter = 8
 
 func init() {
 	var page Page
@@ -47,20 +43,16 @@ func init() {
 }
 
 func (n *Node) Init(key []byte, child0 int64, child1 int64) {
-	var keyOffset uint16
-
-	if len(key) > TreeMaxKeyLength {
-		panic("no space left for key")
-	}
+	extraOffset := GetExtraOffset(0, 1)
 
 	n.SetChildAt(child0, -1)
 	n.SetChildAt(child1, 0)
 
-	n.Head = uint16(NodeExtraOffsetAfter * int(unsafe.Sizeof(keyOffset)))
+	n.Head = uint16(extraOffset)
 	n.Tail = uint16(unsafe.Sizeof(child0)) * 2
 	n.N = 1
 
-	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(NodeExtraOffsetAfter*int(unsafe.Sizeof(keyOffset))))
+	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(extraOffset))
 	n.SetKeyAt(key, 0)
 }
 
@@ -71,6 +63,14 @@ func (n *Node) GetChildAt(index int) int64 {
 func (n *Node) GetChildOffsetInData(index int) int {
 	var i int64
 	return len(n.Data) - (index+2)*int(unsafe.Sizeof(i))
+}
+
+func (n *Node) GetExtraOffset(count int) int {
+	return GetExtraOffset(int(n.N), count)
+}
+
+func (n *Node) GetFirstKeyOffset() int {
+	return GetExtraOffset(0, int(n.N))
 }
 
 func (n *Node) GetKeyAt(index int) []byte {
@@ -103,13 +103,7 @@ func (n *Node) GetKeyOffsets() []uint16 {
 }
 
 func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
-	var keyOffset uint16
-
-	if len(key) > TreeMaxKeyLength {
-		return false
-	}
-
-	extraOffset := util.Bool2Int((n.N+1)%NodeExtraOffsetAfter == 1) * int(unsafe.Sizeof(keyOffset)) * NodeExtraOffsetAfter
+	extraOffset := n.GetExtraOffset(1)
 
 	offset, _ := n.GetKeyOffsetAndLength(index)
 	if int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+extraOffset > len(n.Data) {
@@ -126,25 +120,120 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 		keyOffsets[i] += uint16(len(key) + int(extraOffset))
 	}
 
-	copy(n.Data[offset+len(key)+int(extraOffset):], n.Data[offset:n.Head])
-	copy(n.Data[n.GetKeyOffsetInData(int(n.N))+int(extraOffset):], n.Data[n.GetKeyOffsetInData(int(n.N)):offset])
+	copy(n.Data[offset+len(key)+extraOffset:], n.Data[offset:n.Head])
+	copy(n.Data[n.GetFirstKeyOffset()+extraOffset:], n.Data[n.GetFirstKeyOffset():offset])
 	copy(n.Data[offset+int(extraOffset):], key)
-
 	copy(n.Data[n.GetKeyOffsetInData(index+1):], n.Data[n.GetKeyOffsetInData(index):n.GetKeyOffsetInData(int(n.N))])
 	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(index):], uint16(offset+int(extraOffset)))
 
 	copy(n.Data[n.GetChildOffsetInData(int(n.N)):], n.Data[n.GetChildOffsetInData(int(n.N)-1):n.GetChildOffsetInData(index-1)])
 	n.SetChildAt(child, index)
 
-	n.Head += uint16(len(key) + int(extraOffset))
+	n.Head += uint16(len(key) + extraOffset)
 	n.Tail += uint16(unsafe.Sizeof(child))
 	n.N++
 
 	return true
 }
 
-func (dst *Node) MoveData(src *Node, where int, from int, to int) {
-	panic("not implemented")
+func (src *Node) MoveData(dst *Node, where int, from int, to int) {
+	var keyLengths int
+	var child int64
+
+	if where > int(dst.N) {
+		panic("move destination index forces sparseness")
+	}
+	if to == -1 {
+		to = int(src.N)
+	}
+	count := to - from
+
+	/* Bulk insert keys to 'dst[where+1:]' from 'src[from+1:to]' and children to 'dst[where:]' from 'src[from:to]'. */
+	extraOffset := dst.GetExtraOffset(count - 1)
+	whereKeyOffset, _ := dst.GetKeyOffsetAndLength(where + 1)
+
+	fromKeyOffset, fromKeyLength := src.GetKeyOffsetAndLength(from + 1)
+	keyLengths += fromKeyLength
+
+	for i := from + 2; i < to; i++ {
+		_, keyLength := src.GetKeyOffsetAndLength(i)
+		keyLengths += int(keyLength)
+	}
+
+	childrenLengths := int(unsafe.Sizeof(child)) * count
+
+	if int(dst.Head)+int(dst.Tail)+keyLengths+childrenLengths+extraOffset > len(dst.Data) {
+		panic("no space left in destination")
+	}
+
+	keyOffsets := dst.GetKeyOffsets()
+	if extraOffset > 0 {
+		for i := 0; i < where+1; i++ {
+			keyOffsets[i] += uint16(extraOffset)
+		}
+	}
+	for i := where + 1; i < int(dst.N); i++ {
+		keyOffsets[i] += uint16(keyLengths + extraOffset)
+	}
+
+	copy(dst.Data[whereKeyOffset+keyLengths+extraOffset:], dst.Data[whereKeyOffset:dst.Head])
+	copy(dst.Data[dst.GetFirstKeyOffset()+extraOffset:], dst.Data[dst.GetFirstKeyOffset():whereKeyOffset])
+	copy(dst.Data[whereKeyOffset+extraOffset:], src.Data[fromKeyOffset:fromKeyOffset+keyLengths])
+	copy(dst.Data[dst.GetKeyOffsetInData(where+count):], dst.Data[dst.GetKeyOffsetInData(where+1):dst.GetKeyOffsetInData(int(dst.N))])
+
+	offset := uint16(whereKeyOffset + extraOffset)
+	binary.LittleEndian.PutUint16(dst.Data[dst.GetKeyOffsetInData(where+1):], offset)
+	w := where + 2
+	for i := from + 1; i < to-1; i++ {
+		_, keyLength := src.GetKeyOffsetAndLength(i)
+		offset += uint16(keyLength)
+		binary.LittleEndian.PutUint16(dst.Data[dst.GetKeyOffsetInData(w):], offset)
+		w++
+	}
+
+	copy(dst.Data[dst.GetChildOffsetInData(int(dst.N)+where-1):], dst.Data[dst.GetChildOffsetInData(int(dst.N)-1):dst.GetChildOffsetInData(where-1)])
+
+	w = where
+	for i := from; i < to; i++ {
+		dst.SetChildAt(src.GetChildAt(i), w)
+		w++
+	}
+
+	dst.Head += uint16(keyLengths + extraOffset)
+	dst.Tail += uint16(childrenLengths)
+	dst.N += uint8(count - 1)
+
+	/* Bulk remove of 'src[from:to]'.*/
+	extraOffset = src.GetExtraOffset(-count)
+
+	keyOffsets = src.GetKeyOffsets()
+	if extraOffset > 0 {
+		for i := 0; i < from; i++ {
+			keyOffsets[i] -= uint16(extraOffset)
+		}
+	}
+	for i := to; i < int(src.N); i++ {
+		keyOffsets[i] -= uint16(keyLengths + extraOffset)
+	}
+
+	keyLengths = 0
+	fromKeyOffset, fromKeyLength = src.GetKeyOffsetAndLength(from)
+	keyLengths += fromKeyLength
+
+	for i := from + 1; i < to; i++ {
+		_, keyLength := src.GetKeyOffsetAndLength(i)
+		keyLengths += int(keyLength)
+	}
+
+	copy(src.Data[src.GetKeyOffsetInData(from):], src.Data[src.GetKeyOffsetInData(to):src.GetKeyOffsetInData(int(src.N))])
+	copy(src.Data[src.GetFirstKeyOffset()-extraOffset:], src.Data[src.GetFirstKeyOffset():fromKeyOffset])
+	copy(src.Data[fromKeyOffset-extraOffset:], src.Data[fromKeyOffset+keyLengths:src.Head])
+
+	copy(src.Data[src.GetChildOffsetInData(from):], src.Data[src.GetChildOffsetInData(int(src.N)-1):src.GetChildOffsetInData(to-1)])
+
+	src.Head -= uint16(keyLengths + extraOffset)
+	src.Tail -= uint16(childrenLengths)
+	src.N -= uint8(count)
 }
 
 func (n *Node) SetChildAt(offset int64, index int) {
@@ -152,10 +241,6 @@ func (n *Node) SetChildAt(offset int64, index int) {
 }
 
 func (n *Node) SetKeyAt(key []byte, index int) bool {
-	if len(key) > TreeMaxKeyLength {
-		return false
-	}
-
 	offset, length := n.GetKeyOffsetAndLength(index)
 	if int(n.Head)+int(n.Tail)+len(key)-length > len(n.Data) {
 		return false

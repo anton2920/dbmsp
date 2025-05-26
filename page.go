@@ -4,6 +4,8 @@ import (
 	"log"
 	"reflect"
 	"unsafe"
+
+	"github.com/anton2920/gofa/util"
 )
 
 type PageType uint8
@@ -29,6 +31,9 @@ const (
 	PageTypeNode
 	PageTypeLeaf
 )
+
+/* TODO(anton2920): find the best constant for time-space tradeoff. */
+const ExtraOffsetAfter = 4
 
 func (p *Page) Init(typ PageType) {
 	var clr Page
@@ -68,6 +73,16 @@ func (p *Page) Leaf() *Leaf {
 		log.Panicf("Page has type %d, but tried to use it as '*Leaf'", hdr.Type)
 	}
 	return (*Leaf)(unsafe.Pointer(p))
+}
+
+func GetExtraOffset(n int, count int) int {
+	var offset uint16
+
+	if count > 0 {
+		return (((count + (n % ExtraOffsetAfter) - 1) / ExtraOffsetAfter) + util.Bool2Int((n%ExtraOffsetAfter) == 0)) * int(unsafe.Sizeof(offset)) * ExtraOffsetAfter
+	} else {
+		return (((-count + (ExtraOffsetAfter - (n % ExtraOffsetAfter))) / ExtraOffsetAfter) - util.Bool2Int((n%ExtraOffsetAfter) == 0)) * int(unsafe.Sizeof(offset)) * ExtraOffsetAfter
+	}
 }
 
 func Page2Slice(p *Page) []Page {

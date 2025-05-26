@@ -5,14 +5,12 @@ import (
 	"unsafe"
 )
 
-func TestLeafGetExtraOffset(t *testing.T) {
-	var leaf Leaf
-
+func TestGetExtraOffset(t *testing.T) {
 	/* ((count + l.N%Extra - 1) / Extra) + (l.N%Extra==0) */
 	/* ((count + (Extra - l.N%Extra)) / Extra) - (l.N%Extra==0)*/
 
-	if LeafExtraOffsetAfter != 4 {
-		t.Fatalf("Test expects LeafExtraOffsetAfter to be 4, but it is %d", LeafExtraOffsetAfter)
+	if ExtraOffsetAfter != 4 {
+		t.Fatalf("Test expects ExtraOffsetAfter to be 4, but it is %d", ExtraOffsetAfter)
 	}
 
 	/* _ _ _ _   _ _ _ _   _ _ _ _ */
@@ -23,7 +21,7 @@ func TestLeafGetExtraOffset(t *testing.T) {
 	/* 1 2 3 4   5 6 7 8   _ _ _ _ */
 	/* 1 2 3 4   5 6 7 8   9 _ _ _ */
 	tests := [...]struct {
-		N     uint8
+		N     int
 		Count int
 		Extra int
 	}{
@@ -78,10 +76,8 @@ func TestLeafGetExtraOffset(t *testing.T) {
 		{9, 4, 1},
 	}
 	for _, test := range tests {
-		leaf.N = test.N
-
-		extra := leaf.GetExtraOffset(test.Count)
-		extra /= LeafExtraOffsetAfter * int(unsafe.Sizeof(uint16(0)))
+		extra := GetExtraOffset(test.N, test.Count)
+		extra /= ExtraOffsetAfter * int(unsafe.Sizeof(uint16(0)))
 
 		if extra != test.Extra {
 			t.Errorf("For N = %d, count = %d expected %d, but got %d", test.N, test.Count, test.Extra, extra)
