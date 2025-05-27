@@ -41,7 +41,7 @@ type TreeTx struct {
 
 const (
 	// TreeMaxOrder = 1 << 8
-	TreeMaxOrder = 45
+	TreeMaxOrder = 46
 
 	TreeTxMaxPages    = PageSize - 1
 	TreeNewPageOffset = TreeTxMaxPages
@@ -384,12 +384,26 @@ forOffset:
 		}
 	}
 
+	var overflow bool
+	leaf := page.Leaf()
+
 	if ok {
-		/* Found key, update value. */
-		leaf := page.Leaf()
-		if !leaf.SetValueAt(value, index+1) {
-			panic("called 'SetValueAt'")
+		/* Found key, check for overflow before updating value. */
+		overflow = leaf.OverflowAfterInsertValue(value)
+	} else {
+		/* Check for overflow before inserting new key. */
+		overflow = leaf.OverflowAfterInsertKeyValue(key, value) || (leaf.N+1 >= TreeMaxOrder)
+	}
+
+	if !overflow {
+		if ok {
+			/* Updating value for existing key. */
+			leaf.SetValueAt(value, index+1)
+		} else {
+			/* Insering new key-value. */
+			leaf.InsertKeyValueAt(key, value, index+1)
 		}
+
 		offset, err = tx.writePage(&page, offset)
 		if err != nil {
 			return fmt.Errorf("failed to write updated leaf: %v", err)
@@ -410,115 +424,97 @@ forOffset:
 
 		tx.Root = offset
 	} else {
-		/* Insert new key. */
-		leaf := page.Leaf()
-		if !leaf.OverflowAfterInsertKeyValue(key, value) && (leaf.N+1 < TreeMaxOrder) {
-			leaf.InsertKeyValueAt(key, value, index+1)
+		/* Split leaf into two. */
+		var newLeaf Page
+		newLeaf.Init(PageTypeLeaf)
 
-			offset, err = tx.writePage(&page, offset)
-			if err != nil {
-				return fmt.Errorf("failed to write updated leaf: %v", err)
+		half := int(leaf.N) / 2
+		if index < half-1 {
+			leaf.MoveData(newLeaf.Leaf(), 0, half-1, -1)
+			if ok {
+				leaf.SetValueAt(value, index)
+			} else {
+				leaf.InsertKeyValueAt(key, value, index+1)
 			}
+		} else {
+			leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
+			if ok {
+				newLeaf.Leaf().SetValueAt(value, index-half)
+			} else {
+				newLeaf.Leaf().InsertKeyValueAt(key, value, index+1-half)
+			}
+		}
 
-			/* Update indexing structure. */
-			for p := len(tx.SearchPath) - 1; p >= 0; p-- {
-				index := tx.SearchPath[p].Index
-				page := tx.SearchPath[p].Page
-				node := page.Node()
+		newKey := duplicate(tx.Buffer, newLeaf.Leaf().GetKeyAt(0))
+		newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
+		if err != nil {
+			return fmt.Errorf("failed to write new leaf: %v", err)
+		}
 
-				node.SetChildAt(offset, index)
+		offset, err = tx.writePage(&page, offset)
+		if err != nil {
+			return fmt.Errorf("failed to write updated leaf: %v", err)
+		}
+
+		/* Update indexing structure. */
+		for p := len(tx.SearchPath) - 1; p >= 0; p-- {
+			index := tx.SearchPath[p].Index
+			page := tx.SearchPath[p].Page
+			node := page.Node()
+
+			node.SetChildAt(offset, index)
+			if !node.InsertKeyChildAt(newKey, newPage, index+1) {
+				panic("failed to insert in node")
+			}
+			//fmt.Println(tx.Tree)
+
+			if node.N < TreeMaxOrder {
 				offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
 				if err != nil {
 					return fmt.Errorf("failed to write updated node: %v", err)
 				}
-			}
 
-			tx.Root = offset
-		} else {
-			/* Split leaf into two. */
-			var newLeaf Page
-			newLeaf.Init(PageTypeLeaf)
+				/* Update indexing structure. */
+				for p := p - 1; p >= 0; p-- {
+					index := tx.SearchPath[p].Index
+					page := tx.SearchPath[p].Page
+					node := page.Node()
 
-			half := int(leaf.N) / 2
-			if index < half-1 {
-				leaf.MoveData(newLeaf.Leaf(), 0, half-1, -1)
-				leaf.InsertKeyValueAt(key, value, index+1)
-			} else {
-				leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
-				newLeaf.Leaf().InsertKeyValueAt(key, value, index+1-half)
-			}
-
-			newKey := duplicate(tx.Buffer, newLeaf.Leaf().GetKeyAt(0))
-			newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
-			if err != nil {
-				return fmt.Errorf("failed to write new leaf: %v", err)
-			}
-
-			offset, err = tx.writePage(&page, offset)
-			if err != nil {
-				return fmt.Errorf("failed to write updated leaf: %v", err)
-			}
-
-			/* Update indexing structure. */
-			for p := len(tx.SearchPath) - 1; p >= 0; p-- {
-				index := tx.SearchPath[p].Index
-				page := tx.SearchPath[p].Page
-				node := page.Node()
-
-				node.SetChildAt(offset, index)
-				if !node.InsertKeyChildAt(newKey, newPage, index+1) {
-					panic("failed to insert in node")
-				}
-				//fmt.Println(tx.Tree)
-
-				if node.N < TreeMaxOrder {
+					node.SetChildAt(offset, index)
 					offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
 					if err != nil {
 						return fmt.Errorf("failed to write updated node: %v", err)
 					}
-
-					/* Update indexing structure. */
-					for p := p - 1; p >= 0; p-- {
-						index := tx.SearchPath[p].Index
-						page := tx.SearchPath[p].Page
-						node := page.Node()
-
-						node.SetChildAt(offset, index)
-						offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
-						if err != nil {
-							return fmt.Errorf("failed to write updated node: %v", err)
-						}
-					}
-
-					tx.Root = offset
-					return nil
 				}
 
-				var newNode Page
-				newNode.Init(PageTypeNode)
-
-				newKey = duplicate(tx.Buffer, node.GetKeyAt(half))
-				node.MoveData(newNode.Node(), -1, half, -1)
-				newPage, err = tx.writePage(&newNode, TreeNewPageOffset)
-				if err != nil {
-					return fmt.Errorf("failed to write new node: %v", err)
-				}
-
-				offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
-				if err != nil {
-					return fmt.Errorf("failed to write updated node: %v", err)
-				}
+				tx.Root = offset
+				return nil
 			}
 
-			var root Page
-			root.Init(PageTypeNode)
-			node := root.Node()
-			node.Init(newKey, tx.Root, newPage)
+			var newNode Page
+			newNode.Init(PageTypeNode)
 
-			tx.Root, err = tx.writePage(&root, TreeNewPageOffset)
+			newKey = duplicate(tx.Buffer, node.GetKeyAt(half))
+			node.MoveData(newNode.Node(), -1, half, -1)
+			newPage, err = tx.writePage(&newNode, TreeNewPageOffset)
 			if err != nil {
-				return fmt.Errorf("failed to write new root: %v", err)
+				return fmt.Errorf("failed to write new node: %v", err)
 			}
+
+			offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
+			if err != nil {
+				return fmt.Errorf("failed to write updated node: %v", err)
+			}
+		}
+
+		var root Page
+		root.Init(PageTypeNode)
+		node := root.Node()
+		node.Init(newKey, tx.Root, newPage)
+
+		tx.Root, err = tx.writePage(&root, TreeNewPageOffset)
+		if err != nil {
+			return fmt.Errorf("failed to write new root: %v", err)
 		}
 	}
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-const N = 1000
+const N = 2000
 
 func testKVGet(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
