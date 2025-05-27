@@ -18,7 +18,7 @@ var (
 
 const (
 	Min  = 1
-	Max  = 13
+	Max  = 20
 	Step = 1
 )
 
@@ -47,11 +47,11 @@ func main() {
 
 	fmt.Println("INSERT 2!!!")
 	for key := Min; key <= Max; key += Step {
-		//fmt.Println("I:", key)
+		fmt.Println("I:", key)
 		kv.Set(key, key)
-		//fmt.Println(kv.Tree)
+		fmt.Println(kv.Tree)
 	}
-	//fmt.Println(kv.Tree)
+	fmt.Println(kv.Tree)
 
 	trace.EndAndPrintProfile()
 }

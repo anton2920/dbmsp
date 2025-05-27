@@ -35,13 +35,11 @@ type TreeTx struct {
 	Pages      []Page
 	Offsets    []*int64
 	SearchPath []pathItem
-
-	Buffer []byte
 }
 
 const (
 	// TreeMaxOrder = 1 << 8
-	TreeMaxOrder = 46
+	TreeMaxOrder = 5
 
 	TreeTxMaxPages    = PageSize - 1
 	TreeNewPageOffset = TreeTxMaxPages
@@ -151,7 +149,6 @@ func (t *Tree) BeginTx() *TreeTx {
 	var tx TreeTx
 
 	tx.Tree = t
-	tx.Buffer = make([]byte, PageSize)
 	meta := t.Meta.Meta()
 
 	tx.Tree.RLock()
@@ -392,7 +389,7 @@ forOffset:
 		overflow = leaf.OverflowAfterInsertValue(value)
 	} else {
 		/* Check for overflow before inserting new key. */
-		overflow = leaf.OverflowAfterInsertKeyValue(key, value) || (leaf.N+1 >= TreeMaxOrder)
+		overflow = leaf.OverflowAfterInsertKeyValue(key, value) || (leaf.N >= TreeMaxOrder-1)
 	}
 
 	if !overflow {
@@ -428,6 +425,8 @@ forOffset:
 		var newLeaf Page
 		newLeaf.Init(PageTypeLeaf)
 
+		newBuffer := make([]byte, PageSize)
+
 		half := int(leaf.N) / 2
 		if index < half-1 {
 			leaf.MoveData(newLeaf.Leaf(), 0, half-1, -1)
@@ -445,7 +444,7 @@ forOffset:
 			}
 		}
 
-		newKey := duplicate(tx.Buffer, newLeaf.Leaf().GetKeyAt(0))
+		newKey := duplicate(newBuffer, newLeaf.Leaf().GetKeyAt(0))
 		newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
 		if err != nil {
 			return fmt.Errorf("failed to write new leaf: %v", err)
@@ -463,12 +462,11 @@ forOffset:
 			node := page.Node()
 
 			node.SetChildAt(offset, index)
-			if !node.InsertKeyChildAt(newKey, newPage, index+1) {
-				panic("failed to insert in node")
-			}
-			//fmt.Println(tx.Tree)
 
-			if node.N < TreeMaxOrder {
+			overflow = node.OverflowAfterInsertKeyChild(key) || (node.N >= TreeMaxOrder-1)
+			if !overflow {
+				node.InsertKeyChildAt(newKey, newPage, index+1)
+
 				offset, err = tx.writePage(&page, tx.SearchPath[p].Offset)
 				if err != nil {
 					return fmt.Errorf("failed to write updated node: %v", err)
@@ -491,11 +489,34 @@ forOffset:
 				return nil
 			}
 
+			var insertKey []byte
 			var newNode Page
 			newNode.Init(PageTypeNode)
 
-			newKey = duplicate(tx.Buffer, node.GetKeyAt(half))
-			node.MoveData(newNode.Node(), -1, half, -1)
+			insertBuffer := make([]byte, PageSize)
+
+			half = int(node.N) / 2
+			if index < half-1 {
+				insertKey = duplicate(insertBuffer, newKey)
+				newKey = duplicate(newBuffer, node.GetKeyAt(half-1))
+
+				node.MoveData(newNode.Node(), -1, half-1, -1)
+				node.InsertKeyChildAt(insertKey, newPage, index+1)
+			} else if index == half-1 {
+				insertKey = duplicate(insertBuffer, node.GetKeyAt(half))
+				insertPage := node.GetChildAt(half)
+
+				node.MoveData(newNode.Node(), -1, half, -1)
+				newNode.Node().SetChildAt(newPage, -1)
+				newNode.Node().InsertKeyChildAt(insertKey, insertPage, index+1-half)
+			} else {
+				insertKey = duplicate(insertBuffer, newKey)
+				newKey = duplicate(newBuffer, node.GetKeyAt(half))
+
+				node.MoveData(newNode.Node(), -1, half, -1)
+				newNode.Node().InsertKeyChildAt(insertKey, newPage, index-half)
+			}
+
 			newPage, err = tx.writePage(&newNode, TreeNewPageOffset)
 			if err != nil {
 				return fmt.Errorf("failed to write new node: %v", err)

@@ -236,6 +236,11 @@ func (src *Node) MoveData(dst *Node, where int, from int, to int) {
 	src.N -= uint8(count)
 }
 
+func (n *Node) OverflowAfterInsertKeyChild(key []byte) bool {
+	var child int64
+	return int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+n.GetExtraOffset(1) > len(n.Data)
+}
+
 func (n *Node) SetChildAt(offset int64, index int) {
 	binary.LittleEndian.PutUint64(n.Data[n.GetChildOffsetInData(index):], uint64(offset))
 }
