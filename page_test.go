@@ -96,17 +96,19 @@ func BenchmarkLeafInsertKeyValueAt(b *testing.B) {
 	b.Run("Prepend", func(b *testing.B) {
 		leaf.InsertKeyValueAt(key, value, 0)
 		for i := 0; i < b.N; i++ {
-			if leaf.InsertKeyValueAt(key, value, 0) == false {
+			if leaf.OverflowAfterInsertKeyValue(key, value) {
 				leaf.Reset()
 			}
+			leaf.InsertKeyValueAt(key, value, 0)
 		}
 	})
 	b.Run("Append", func(b *testing.B) {
 		leaf.InsertKeyValueAt(key, value, 0)
 		for i := 0; i < b.N; i++ {
-			if leaf.InsertKeyValueAt(key, value, int(leaf.N)) == false {
+			if leaf.OverflowAfterInsertKeyValue(key, value) {
 				leaf.Reset()
 			}
+			leaf.InsertKeyValueAt(key, value, int(leaf.N))
 		}
 	})
 }

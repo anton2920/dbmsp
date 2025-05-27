@@ -114,7 +114,7 @@ func (l *Leaf) GetValueOffsets() []uint16 {
 	return *(*[]uint16)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&l.Data[0])) + uintptr(len(l.Data)) - unsafe.Sizeof(valueOffset)*uintptr(l.N), Len: int(l.N), Cap: int(l.N)}))
 }
 
-func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
+func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) {
 	if index > int(l.N) {
 		panic("index out of range for insert")
 	}
@@ -123,7 +123,7 @@ func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
 	keyOffset, _ := l.GetKeyOffsetAndLength(index)
 	valueOffset, _ := l.GetValueOffsetAndLength(index)
 	if int(l.Head)+int(l.Tail)+len(key)+len(value)+2*extraOffset > len(l.Data) {
-		return false
+		panic("insert key-value causes overflow")
 	}
 
 	keyOffsets := l.GetKeyOffsets()
@@ -154,8 +154,6 @@ func (l *Leaf) InsertKeyValueAt(key []byte, value []byte, index int) bool {
 	l.Head += uint16(len(key) + extraOffset)
 	l.Tail += uint16(len(value) + extraOffset)
 	l.N++
-
-	return true
 }
 
 func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
@@ -189,7 +187,7 @@ func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
 	}
 
 	if int(dst.Head)+int(dst.Tail)+keyLengths+valueLengths+extraOffset > len(dst.Data) {
-		panic("no space left in destination")
+		panic("move data causes overflow")
 	}
 
 	keyOffsets := dst.GetKeyOffsets()
@@ -277,7 +275,7 @@ func (l *Leaf) OverflowAfterInsertValue(value []byte) bool {
 	return (int8(l.N) == ^0) || (int(l.Head)+int(l.Tail)+len(value)+2*l.GetExtraOffset(1) > len(l.Data))
 }
 
-func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
+func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) {
 	if (index < 0) || (index >= int(l.N)) {
 		panic("leaf index out of range")
 	}
@@ -285,7 +283,7 @@ func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 	keyOffset, keyLength := l.GetKeyOffsetAndLength(index)
 	valueOffset, valueLength := l.GetValueOffsetAndLength(index)
 	if int(l.Head)+int(l.Tail)+len(key)+len(value)-keyLength-valueLength > len(l.Data) {
-		return false
+		panic("set key-value causes overflow")
 	}
 
 	copy(l.Data[keyOffset+len(key):], l.Data[keyOffset+keyLength:l.Head])
@@ -304,17 +302,16 @@ func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 
 	l.Head += uint16(len(key) - keyLength)
 	l.Tail += uint16(len(value) - valueLength)
-	return true
 }
 
-func (l *Leaf) SetValueAt(value []byte, index int) bool {
+func (l *Leaf) SetValueAt(value []byte, index int) {
 	if (index < 0) || (index >= int(l.N)) {
 		panic("leaf index out of range")
 	}
 
 	valueOffset, valueLength := l.GetValueOffsetAndLength(index)
 	if int(l.Head)+int(l.Tail)+len(value)-valueLength > len(l.Data) {
-		return false
+		panic("set value causes overflow")
 	}
 
 	/* value3 | value2 | value1 | value0 | offt3 | offt2 | offt1 | offt0 | */
@@ -327,7 +324,6 @@ func (l *Leaf) SetValueAt(value []byte, index int) bool {
 	}
 
 	l.Tail += uint16(len(value) - valueLength)
-	return true
 }
 
 func (l *Leaf) String() string {

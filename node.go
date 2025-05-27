@@ -102,12 +102,15 @@ func (n *Node) GetKeyOffsets() []uint16 {
 	return *(*[]uint16)(unsafe.Pointer(&reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&n.Data[0])), Len: int(n.N), Cap: int(n.N)}))
 }
 
-func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
-	extraOffset := n.GetExtraOffset(1)
+func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) {
+	if (index < 0) || (index > int(n.N)) {
+		panic("node index out of range")
+	}
 
+	extraOffset := n.GetExtraOffset(1)
 	offset, _ := n.GetKeyOffsetAndLength(index)
 	if int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+extraOffset > len(n.Data) {
-		return false
+		panic("insert key-child causes overflow")
 	}
 
 	keyOffsets := n.GetKeyOffsets()
@@ -132,8 +135,6 @@ func (n *Node) InsertKeyChildAt(key []byte, child int64, index int) bool {
 	n.Head += uint16(len(key) + extraOffset)
 	n.Tail += uint16(unsafe.Sizeof(child))
 	n.N++
-
-	return true
 }
 
 func (src *Node) MoveData(dst *Node, where int, from int, to int) {
@@ -163,7 +164,7 @@ func (src *Node) MoveData(dst *Node, where int, from int, to int) {
 	childrenLengths := int(unsafe.Sizeof(child)) * count
 
 	if int(dst.Head)+int(dst.Tail)+keyLengths+childrenLengths+extraOffset > len(dst.Data) {
-		panic("no space left in destination")
+		panic("move data causes overflow")
 	}
 
 	keyOffsets := dst.GetKeyOffsets()
@@ -245,10 +246,14 @@ func (n *Node) SetChildAt(offset int64, index int) {
 	binary.LittleEndian.PutUint64(n.Data[n.GetChildOffsetInData(index):], uint64(offset))
 }
 
-func (n *Node) SetKeyAt(key []byte, index int) bool {
+func (n *Node) SetKeyAt(key []byte, index int) {
+	if (index < 0) || (index >= int(n.N)) {
+		panic("node index out of range")
+	}
+
 	offset, length := n.GetKeyOffsetAndLength(index)
 	if int(n.Head)+int(n.Tail)+len(key)-length > len(n.Data) {
-		return false
+		panic("set key causes overflow")
 	}
 
 	keyOffsets := n.GetKeyOffsets()
@@ -261,7 +266,6 @@ func (n *Node) SetKeyAt(key []byte, index int) bool {
 	copy(n.Data[offset:], key)
 
 	n.Head += uint16(len(key) - length)
-	return true
 }
 
 func (n *Node) String() string {
