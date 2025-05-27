@@ -34,11 +34,11 @@ func main() {
 
 	println("INSERT 1!!!")
 	for _, key := range InsertKeys {
-		//fmt.Println("I:", key)
+		fmt.Println("I:", key)
 		kv.Set(key, 0)
-		//fmt.Println(kv.Tree)
+		fmt.Println(kv.Tree)
 	}
-	//fmt.Println(kv.Tree)
+	fmt.Println(kv.Tree)
 
 	if err := kv.Init(new(MemoryPager)); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize KV: %v\n", err)

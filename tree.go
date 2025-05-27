@@ -411,15 +411,10 @@ forOffset:
 		tx.Root = offset
 	} else {
 		/* Insert new key. */
-		/* TODO(anton2920): leaf may be split in two cases: 1) no space left for new KV-pair; 2) artificial cap on TreeMaxOrder. */
 		leaf := page.Leaf()
-		half := TreeMaxOrder / 2
-		if !leaf.InsertKeyValueAt(key, value, index+1) {
-			panic("failed to insert in leaf")
-		}
-		// fmt.Println(tx.Tree)
+		if !leaf.OverflowAfterInsertKeyValue(key, value) && (leaf.N+1 < TreeMaxOrder) {
+			leaf.InsertKeyValueAt(key, value, index+1)
 
-		if leaf.N < TreeMaxOrder {
 			offset, err = tx.writePage(&page, offset)
 			if err != nil {
 				return fmt.Errorf("failed to write updated leaf: %v", err)
@@ -444,8 +439,16 @@ forOffset:
 			var newLeaf Page
 			newLeaf.Init(PageTypeLeaf)
 
-			newKey := duplicate(tx.Buffer, leaf.GetKeyAt(half))
-			leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
+			half := int(leaf.N) / 2
+			if index < half-1 {
+				leaf.MoveData(newLeaf.Leaf(), 0, half-1, -1)
+				leaf.InsertKeyValueAt(key, value, index+1)
+			} else {
+				leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
+				newLeaf.Leaf().InsertKeyValueAt(key, value, index+1-half)
+			}
+
+			newKey := duplicate(tx.Buffer, newLeaf.Leaf().GetKeyAt(0))
 			newPage, err := tx.writePage(&newLeaf, TreeNewPageOffset)
 			if err != nil {
 				return fmt.Errorf("failed to write new leaf: %v", err)
@@ -548,7 +551,8 @@ func (tx *TreeTx) stringImpl(buf *bytes.Buffer, offset int64, level int) error {
 		case PageTypeLeaf:
 			leaf := page.Leaf()
 			for i := 0; i < int(leaf.N); i++ {
-				fmt.Fprintf(buf, "(%d: %d) ", slice2Int(leaf.GetKeyAt(i)), slice2Int(leaf.GetValueAt(i)))
+				fmt.Fprintf(buf, "%4d", slice2Int(leaf.GetKeyAt(i)))
+				// fmt.Fprintf(buf, "(%d: %d) ", slice2Int(leaf.GetKeyAt(i)), slice2Int(leaf.GetValueAt(i)))
 			}
 			buf.WriteRune('\n')
 		}

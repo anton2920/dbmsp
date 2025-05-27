@@ -269,6 +269,10 @@ func (src *Leaf) MoveData(dst *Leaf, where int, from int, to int) {
 	src.N -= uint8(count)
 }
 
+func (l *Leaf) OverflowAfterInsertKeyValue(key []byte, value []byte) bool {
+	return (int8(l.N) == ^0) || (int(l.Head)+int(l.Tail)+len(key)+len(value)+2*l.GetExtraOffset(1) > len(l.Data))
+}
+
 func (l *Leaf) SetKeyValueAt(key []byte, value []byte, index int) bool {
 	if (index < 0) || (index >= int(l.N)) {
 		panic("leaf index out of range")
