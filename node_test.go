@@ -22,7 +22,7 @@ func BenchmarkNodeInsertKeyChildAt(b *testing.B) {
 	b.Run("Prepend", func(b *testing.B) {
 		node.Init(key, 0, 0)
 		for i := 0; i < b.N; i++ {
-			if node.OverflowAfterInsertKeyChild(key) {
+			if node.OverflowAfterInsertKeyChild(len(key)) {
 				node.Init(key, 0, 0)
 			}
 			node.InsertKeyChildAt(key, 0, 0)
@@ -31,7 +31,7 @@ func BenchmarkNodeInsertKeyChildAt(b *testing.B) {
 	b.Run("Append", func(b *testing.B) {
 		node.Init(key, 0, 0)
 		for i := 0; i < b.N; i++ {
-			if node.OverflowAfterInsertKeyChild(key) {
+			if node.OverflowAfterInsertKeyChild(len(key)) {
 				node.Init(key, 0, 0)
 			}
 			node.InsertKeyChildAt(key, 0, int(node.N))

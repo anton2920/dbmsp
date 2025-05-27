@@ -237,9 +237,9 @@ func (src *Node) MoveData(dst *Node, where int, from int, to int) {
 	src.N -= uint8(count)
 }
 
-func (n *Node) OverflowAfterInsertKeyChild(key []byte) bool {
+func (n *Node) OverflowAfterInsertKeyChild(keyLength int) bool {
 	var child int64
-	return int(n.Head)+int(n.Tail)+len(key)+int(unsafe.Sizeof(child))+n.GetExtraOffset(1) > len(n.Data)
+	return int(n.Head)+int(n.Tail)+keyLength+int(unsafe.Sizeof(child))+n.GetExtraOffset(1) > len(n.Data)
 }
 
 func (n *Node) SetChildAt(offset int64, index int) {

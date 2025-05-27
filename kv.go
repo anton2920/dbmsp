@@ -16,7 +16,9 @@ const (
 func serialize(x interface{}) []byte {
 	switch x := x.(type) {
 	default:
-		panic("only int is supported")
+		panic("type is not supported")
+	case []byte:
+		return x
 	case int:
 		buffer := make([]byte, unsafe.Sizeof(x))
 		binary.LittleEndian.PutUint64(buffer, uint64(x))

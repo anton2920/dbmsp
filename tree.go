@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"unsafe"
 
 	"github.com/anton2920/gofa/trace"
 	"github.com/anton2920/gofa/util"
@@ -38,30 +37,12 @@ type TreeTx struct {
 }
 
 const (
-	// TreeMaxOrder = 1 << 8
-	TreeMaxOrder = 5
+	TreeMaxOrder = 1 << 8
+	// TreeMaxOrder = 5
 
 	TreeTxMaxPages    = PageSize - 1
 	TreeNewPageOffset = TreeTxMaxPages
 )
-
-func init() {
-	var p Page
-	var m Meta
-	var n Node
-	var l Leaf
-
-	const (
-		psize = unsafe.Sizeof(p)
-		msize = unsafe.Sizeof(m)
-		nsize = unsafe.Sizeof(n)
-		lsize = unsafe.Sizeof(l)
-	)
-
-	if (psize != msize) || (psize != nsize) || (psize != lsize) {
-		log.Panicf("[tree]: sizeof(Page) == %d, sizeof(Meta) == %d, sizeof(Node) == %d, sizeof(Leaf) == %d", psize, msize, nsize, lsize)
-	}
-}
 
 func duplicate(buffer []byte, x []byte) []byte {
 	if len(buffer) < len(x) {
@@ -266,6 +247,20 @@ func (tx *TreeTx) Commit() error {
 					node.SetChildAt(transformOffset(offset, startOffset), j)
 				}
 			}
+		case PageTypeLeaf:
+			leaf := page.Leaf()
+			for j := 0; j < int(leaf.N); j++ {
+				value := leaf.GetValueAt(j)
+				switch ValueGetType(value) {
+				case ValueTypePartial:
+					ValueSetNext(value, transformOffset(ValueGetNext(value), startOffset))
+				}
+			}
+		case PageTypeOverflow:
+			overflow := page.Overflow()
+			if overflow.Next > 0 {
+				overflow.Next = transformOffset(overflow.Next, startOffset)
+			}
 		}
 	}
 	if tx.Root < TreeTxMaxPages {
@@ -292,6 +287,7 @@ func (tx *TreeTx) Del(key []byte) error {
 func (tx *TreeTx) Get(key []byte) []byte {
 	defer trace.End(trace.Begin(""))
 
+	var buffer []byte
 	var page Page
 	var v []byte
 
@@ -311,12 +307,31 @@ func (tx *TreeTx) Get(key []byte) []byte {
 			index, ok := leafFind(tx.Tree.Pager, leaf, key)
 			if ok {
 				v = leaf.GetValueAt(index + 1)
+				switch ValueGetType(v) {
+				default:
+					panic("unknown value type")
+				case ValueTypeFull:
+					return ValueGetFull(v)
+				case ValueTypePartial:
+					v, next := ValueGetPartial(v)
+					buffer = append(buffer, v...)
+
+					for next != 0 {
+						if err := tx.readPage(&page, next); err != nil {
+							log.Panicf("Failed to read page: %v", err)
+						}
+						overflow := page.Overflow()
+						buffer = append(buffer, overflow.GetValue()...)
+						next = overflow.Next
+					}
+
+					return buffer
+				}
 			}
-			offset = 0
 		}
 	}
 
-	return v
+	return nil
 }
 
 func (tx *TreeTx) Has(key []byte) bool {
@@ -384,12 +399,39 @@ forOffset:
 	var overflow bool
 	leaf := page.Leaf()
 
+	if leaf.OverflowAfterInsertKeyValueInEmpty(len(key), FullValueLen(value)) {
+		var page Page
+		page.Init(PageTypeOverflow)
+		overflow := page.Overflow()
+
+		value = overflow.SetValue(value)
+		offset, err := tx.writePage(&page, TreeNewPageOffset)
+		if err != nil {
+			return fmt.Errorf("failed to write new overflow: %v", err)
+		}
+
+		for (len(value) != 0) && (leaf.OverflowAfterInsertKeyValueInEmpty(len(key), PartialValueLen(value))) {
+			overflow.Next = offset
+			value = overflow.SetValue(value)
+			offset, err = tx.writePage(&page, TreeNewPageOffset)
+			if err != nil {
+				return fmt.Errorf("failed to write new overflow: %v", err)
+			}
+		}
+
+		/* TODO(anton2920): remove extra memory allocation. */
+		value = PartialValue(value, offset)
+	} else {
+		/* TODO(anton2920): remove extra memory allocation. */
+		value = FullValue(value)
+	}
+
 	if ok {
 		/* Found key, check for overflow before updating value. */
-		overflow = leaf.OverflowAfterInsertValue(value)
+		overflow = leaf.OverflowAfterInsertValue(len(value))
 	} else {
 		/* Check for overflow before inserting new key. */
-		overflow = leaf.OverflowAfterInsertKeyValue(key, value) || (leaf.N >= TreeMaxOrder-1)
+		overflow = leaf.OverflowAfterInsertKeyValue(len(key), len(value)) || (leaf.N >= TreeMaxOrder-1)
 	}
 
 	if !overflow {
@@ -463,7 +505,7 @@ forOffset:
 
 			node.SetChildAt(offset, index)
 
-			overflow = node.OverflowAfterInsertKeyChild(key) || (node.N >= TreeMaxOrder-1)
+			overflow = node.OverflowAfterInsertKeyChild(len(key)) || (node.N >= TreeMaxOrder-1)
 			if !overflow {
 				node.InsertKeyChildAt(newKey, newPage, index+1)
 
@@ -569,7 +611,6 @@ func (tx *TreeTx) stringImpl(buf *bytes.Buffer, offset int64, level int) error {
 			leaf := page.Leaf()
 			for i := 0; i < int(leaf.N); i++ {
 				fmt.Fprintf(buf, "%4d", slice2Int(leaf.GetKeyAt(i)))
-				// fmt.Fprintf(buf, "(%d: %d) ", slice2Int(leaf.GetKeyAt(i)), slice2Int(leaf.GetValueAt(i)))
 			}
 			buf.WriteRune('\n')
 		}

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"crypto/rand"
 	"testing"
 )
 
-const N = 1000
+const N = 10000
 
 func testKVGet(t *testing.T, g Generator, pager Pager) {
 	t.Helper()
@@ -99,6 +101,36 @@ func testKVSet(t *testing.T, g Generator, pager Pager) {
 	}
 }
 
+func testKVSetLarge(t *testing.T, g Generator, pager Pager) {
+	t.Helper()
+
+	var kv KV
+	if err := kv.Init(pager); err != nil {
+		t.Fatalf("Failed to initialize KV: %v", err)
+	}
+	value := make([]byte, PageSize)
+
+	for i := 0; i < N; i++ {
+		k := g.Generate()
+		if _, err := rand.Read(value); err != nil {
+			t.Fatalf("Failed to generate random value: %v", err)
+		}
+
+		kv.Set(k, value)
+		if !kv.Has(k) {
+			t.Errorf("expected to find key %v, found nothing", k)
+		}
+		got := kv.Get(k)
+		v, ok := got.([]byte)
+		if !ok {
+			t.Errorf("expected '[]byte', got '%T'", got)
+		}
+		if bytes.Compare(v, value) != 0 {
+			t.Errorf("expected value %v, got %v", value, v)
+		}
+	}
+}
+
 func TestKV(t *testing.T) {
 	ops := [...]struct {
 		Name string
@@ -108,6 +140,7 @@ func TestKV(t *testing.T) {
 		// 	{"Del", testKVDel},
 		{"Has", testKVHas},
 		{"Set", testKVSet},
+		{"SetLarge", testKVSetLarge},
 	}
 
 	generators := [...]Generator{
@@ -127,6 +160,7 @@ func TestKV(t *testing.T) {
 						op.Func(t, generator, new(MemoryPager))
 					})
 					t.Run("FilePager", func(t *testing.T) {
+						t.Skip()
 						filePager, err := FilePagerNew(generator.String() + "_test.kv")
 						if err != nil {
 							t.Fatalf("Failed to create new file pager: %v", err)

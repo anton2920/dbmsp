@@ -30,10 +30,31 @@ const (
 	PageTypeMeta
 	PageTypeNode
 	PageTypeLeaf
+	PageTypeOverflow
 )
 
 /* TODO(anton2920): find the best constant for time-space tradeoff. */
 const ExtraOffsetAfter = 16
+
+func init() {
+	var p Page
+	var m Meta
+	var n Node
+	var l Leaf
+	var o Overflow
+
+	const (
+		psize = unsafe.Sizeof(p)
+		msize = unsafe.Sizeof(m)
+		nsize = unsafe.Sizeof(n)
+		lsize = unsafe.Sizeof(l)
+		osize = unsafe.Sizeof(o)
+	)
+
+	if (psize != msize) || (psize != nsize) || (psize != lsize) || (psize != osize) {
+		log.Panicf("[tree]: sizeof(Page) == %d, sizeof(Meta) == %d, sizeof(Node) == %d, sizeof(Leaf) == %d, sizeof(Oveflow) == %d", psize, msize, nsize, lsize, osize)
+	}
+}
 
 func (p *Page) Init(typ PageType) {
 	hdr := p.Header()
@@ -73,6 +94,14 @@ func (p *Page) Leaf() *Leaf {
 		log.Panicf("Page has type %d, but tried to use it as '*Leaf'", hdr.Type)
 	}
 	return (*Leaf)(unsafe.Pointer(p))
+}
+
+func (p *Page) Overflow() *Overflow {
+	hdr := p.Header()
+	if hdr.Type != PageTypeOverflow {
+		log.Panicf("Page has type %d, but tried to use it as '*Overflow'", hdr.Type)
+	}
+	return (*Overflow)(unsafe.Pointer(p))
 }
 
 func GetExtraOffset(n int, count int) int {
