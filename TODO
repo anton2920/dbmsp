@@ -1,10 +1,7 @@
 Now:
-	- Store child pointers at the back of the page.
-	- Store values at the back of the page?
 	- Store Prev/Next pointers separately.
 
 Later:
-	- Ability to store variable-sized blob data.
 	- Support batching.
 	- Freelist.
 
