@@ -195,6 +195,7 @@ func (tx *TreeTx) readPage(page *Page, offset int64) error {
 		*page = tx.Pages[offset]
 		return nil
 	}
+
 	return tx.Tree.Pager.ReadPagesAt(Page2Slice(page), offset)
 }
 
@@ -303,6 +304,7 @@ func (tx *TreeTx) Get(key []byte) []byte {
 			index := nodeFind(tx.Tree.Pager, node, key)
 			offset = node.GetChildAt(index)
 		case PageTypeLeaf:
+			offset = 0
 			leaf := page.Leaf()
 			index, ok := leafFind(tx.Tree.Pager, leaf, key)
 			if ok {
