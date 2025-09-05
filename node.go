@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/anton2920/gofa/debug"
+	"github.com/anton2920/gofa/trace"
 )
 
 type Node struct {
@@ -54,6 +55,20 @@ func (n *Node) Init(key []byte, child0 int64, child1 int64) {
 
 	binary.LittleEndian.PutUint16(n.Data[n.GetKeyOffsetInData(0):], uint16(extraOffset))
 	n.SetKeyAt(key, 0)
+}
+
+func (n *Node) Find(key []byte) int {
+	defer trace.End(trace.Begin(""))
+
+	if res := bytes.Compare(key, n.GetKeyAt(int(n.N)-1)); res >= 0 {
+		return int(n.N) - 1
+	}
+	for i := 0; i < int(n.N); i++ {
+		if bytes.Compare(key, n.GetKeyAt(i)) < 0 {
+			return i - 1
+		}
+	}
+	return int(n.N) - 1
 }
 
 func (n *Node) GetChildAt(index int) int64 {

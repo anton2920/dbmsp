@@ -2,15 +2,13 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/anton2920/gofa/trace"
 )
 
 type Pager interface {
-	ReadPagesAt(pages []Page, offset int64) error
-	WritePagesAt(pages []Page, offset int64) error
+	ReadPagesAt(pages []Page, index int64) (int64, error)
+	WritePagesAt(pages []Page, index int64) (int64, error)
 }
 
 type MemoryPager struct {
@@ -19,45 +17,42 @@ type MemoryPager struct {
 
 var _ Pager = new(MemoryPager)
 
-func (p *MemoryPager) ReadPagesAt(pages []Page, offset int64) error {
+func (p *MemoryPager) ReadPagesAt(pages []Page, index int64) (int64, error) {
 	defer trace.End(trace.Begin(""))
 
-	if offset%PageSize != 0 {
-		return fmt.Errorf("offset must be a multiple of PageSize")
+	if index < 0 {
+		index = int64(len(p.Pages))
 	}
-	index := int(offset / PageSize)
 
-	if (index == 0) && (len(p.Pages) == 0) {
-		return nil
-	}
-	if (index < 0) || (index >= len(p.Pages)) {
-		return fmt.Errorf("pages index out of bounds")
+	if (index < 0) || (index >= int64(len(p.Pages))) {
+		return index, fmt.Errorf("pages index out of bounds")
 	}
 
 	copy(pages, p.Pages[index:])
-	return nil
+	return index, nil
 }
 
-func (p *MemoryPager) WritePagesAt(pages []Page, offset int64) error {
+func (p *MemoryPager) WritePagesAt(pages []Page, index int64) (int64, error) {
 	defer trace.End(trace.Begin(""))
 
-	if offset%PageSize != 0 {
-		return fmt.Errorf("offset must be a multiple of PageSize")
-	}
-	index := int(offset / PageSize)
-
-	if (index < 0) || (index >= len(p.Pages)+1) {
-		return fmt.Errorf("pages index out of bounds")
+	if index < 0 {
+		index = int64(len(p.Pages))
 	}
 
-	if index == len(p.Pages) {
+	if (index < 0) || (index >= int64(len(p.Pages))+1) {
+		return -1, fmt.Errorf("pages index out of bounds")
+	}
+
+	if index == int64(len(p.Pages)) {
 		p.Pages = append(p.Pages, pages...)
 	} else {
 		copy(p.Pages[index:], pages)
 	}
-	return nil
+
+	return index, nil
 }
 
+/*
 type FilePager struct {
 	File *os.File
 }
@@ -104,3 +99,4 @@ func (p *FilePager) WritePagesAt(pages []Page, offset int64) error {
 	}
 	return nil
 }
+*/

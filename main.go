@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"log"
 
 	_ "github.com/anton2920/gofa/intel"
 	"github.com/anton2920/gofa/trace"
@@ -14,6 +14,8 @@ var (
 
 	/* 25 45 24; 38 32; 8 27 46 13 42; 5 22 18 26; 7 35 15; */
 	DeleleKeys = [...]int{25, 45, 24, 38, 32, 8, 27, 46, 13, 42, 5, 22, 18, 26, 7, 35, 15}
+
+	ZeroValue = int2Slice(0)
 )
 
 const (
@@ -23,11 +25,11 @@ const (
 )
 
 func main() {
-	var kv KV
+	var pager MemoryPager
 
-	if err := kv.Init(new(MemoryPager)); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize KV: %v\n", err)
-		os.Exit(1)
+	t, err := GetTreeAt(&pager, -1)
+	if err != nil {
+		log.Fatalf("Failed to get first tree: %v", err)
 	}
 
 	trace.BeginProfile()
@@ -35,23 +37,23 @@ func main() {
 	println("INSERT 1!!!")
 	for _, key := range InsertKeys {
 		fmt.Println("I:", key)
-		kv.Set(key, 0)
-		fmt.Println(kv.Tree)
+		t.Set(int2Slice(key), ZeroValue)
+		fmt.Println(t)
 	}
-	fmt.Println(kv.Tree)
+	fmt.Println(t)
 
-	if err := kv.Init(new(MemoryPager)); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize KV: %v\n", err)
-		os.Exit(1)
+	t, err = GetTreeAt(&pager, -1)
+	if err != nil {
+		log.Fatalf("Failed to get second tree: %v", err)
 	}
 
 	fmt.Println("INSERT 2!!!")
 	for key := Min; key <= Max; key += Step {
 		fmt.Println("I:", key)
-		kv.Set(key, key)
-		fmt.Println(kv.Tree)
+		t.Set(int2Slice(key), ZeroValue)
+		fmt.Println(t)
 	}
-	fmt.Println(kv.Tree)
+	fmt.Println(t)
 
 	trace.EndAndPrintProfile()
 }

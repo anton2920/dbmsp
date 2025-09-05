@@ -8,6 +8,8 @@ import (
 	"unsafe"
 
 	"github.com/anton2920/gofa/debug"
+	"github.com/anton2920/gofa/trace"
+	"github.com/anton2920/gofa/util"
 )
 
 type Leaf struct {
@@ -38,6 +40,24 @@ func init() {
 
 	leaf.SetKeyValueAt([]byte{255, 255, 255, 255, 255}, []byte{255, 255, 255, 255, 255}, 1)
 	debug.Printf("[leaf]: %v\n", leaf)
+}
+
+func (l *Leaf) Find(key []byte) (int, bool) {
+	defer trace.End(trace.Begin(""))
+
+	if l.N == 0 {
+		return -1, false
+	} else if res := bytes.Compare(key, l.GetKeyAt(int(l.N)-1)); res >= 0 {
+		return int(l.N) - 1 - util.Bool2Int(res == 0), res == 0
+	}
+
+	for i := 0; i < int(l.N); i++ {
+		if res := bytes.Compare(key, l.GetKeyAt(i)); res <= 0 {
+			return i - 1, res == 0
+		}
+	}
+
+	return int(l.N) - 1, false
 }
 
 func (l *Leaf) GetExtraOffset(count int) int {

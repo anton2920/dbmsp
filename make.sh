@@ -49,7 +49,7 @@ case $1 in
 		;;
 	check)
 		run $0 $VERBOSITYFLAGS test-race-cover
-		run ./$PROJECT.test
+		run ./$PROJECT.test -test.v
 		;;
 	check-bench)
 		run $0 $VERBOSITYFLAGS test
@@ -63,8 +63,8 @@ case $1 in
 		run $0 $VERBOSITYFLAGS test
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.memprofile=$PROJECT-mem.pprof
 		;;
-	check-bench-tracing)
-		run $0 $VERBOSITYFLAGS test-tracing
+	check-bench-trace)
+		run $0 $VERBOSITYFLAGS test-trace
 		run ./$PROJECT.test -test.run=^Benchmark -test.benchmem -test.bench=. -test.count=8 -test.benchtime=10000x
 		;;
 	check-cover)
@@ -137,11 +137,11 @@ case $1 in
 		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -race -cover -gcflags="all=-N -l"
 		;;
-	test-tracing)
+	test-trace)
 		# run $0 $VERBOSITYFLAGS vet
 		run go test $VERBOSITYFLAGS -c -o $PROJECT.test -vet=off -tags gofatrace
 		;;
-	tracing)
+	trace)
 		run go build $VERBOSITYFLAGS -o $PROJECT -tags gofatrace
 		;;
 	vet)
