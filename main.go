@@ -24,6 +24,18 @@ const (
 	Step = 1
 )
 
+func TreePrintSeq(t *Tree) {
+	it, err := t.Begin()
+	if err != nil {
+		log.Fatalf("Failed to get iterator: %v", err)
+	}
+	for it.Next() {
+		fmt.Printf("%d ", slice2Int(it.Key()))
+	}
+	fmt.Println()
+	fmt.Println()
+}
+
 func main() {
 	var pager MemoryPager
 
@@ -41,6 +53,7 @@ func main() {
 		fmt.Println(t)
 	}
 	fmt.Println(t)
+	TreePrintSeq(t)
 
 	t, err = GetTreeAt(&pager, -1)
 	if err != nil {
@@ -54,6 +67,7 @@ func main() {
 		fmt.Println(t)
 	}
 	fmt.Println(t)
+	TreePrintSeq(t)
 
 	trace.EndAndPrintProfile()
 }

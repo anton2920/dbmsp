@@ -15,8 +15,10 @@ import (
 type Leaf struct {
 	PageHeader
 
+	Next int64
+
 	/* Data is structured as follows: | N*sizeof(uint16) bytes of keyOffsets | keys... | ...empty space... | ...values | N*sizeof(uint16) bytes of valueOffsets | */
-	Data [PageSize - PageHeaderSize]byte
+	Data [PageSize - PageHeaderSize - 1*unsafe.Sizeof(int64(0))]byte
 }
 
 func init() {
@@ -378,4 +380,8 @@ func (l *Leaf) Reset() {
 	l.N = 0
 	l.Head = 0
 	l.Tail = 0
+}
+
+func (l *Leaf) Page() *Page {
+	return (*Page)(unsafe.Pointer(l))
 }

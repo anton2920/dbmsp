@@ -19,6 +19,12 @@ type Tree struct {
 	SearchPath []TreePathItem
 }
 
+type TreeForwardIterator struct {
+	*Tree
+	Leaf
+	Current int
+}
+
 type TreePathItem struct {
 	Page
 	Index int64
@@ -26,9 +32,10 @@ type TreePathItem struct {
 }
 
 const (
-	TreeMaxOrder = 1 << 8
-	//TreeMaxOrder = 5
+	//TreeMaxOrder = 1 << 8
+	TreeMaxOrder = 5
 
+	TreeMagic   = 0xFAFEFAAF
 	TreeVersion = 0x1
 )
 
@@ -66,7 +73,6 @@ func GetTreeAt(pager Pager, index int64) (*Tree, error) {
 			Meta = iota
 			Root
 			End
-			Rend
 			Count
 		)
 
@@ -74,29 +80,55 @@ func GetTreeAt(pager Pager, index int64) (*Tree, error) {
 
 		pages[Meta].Init(PageTypeMeta)
 		meta := pages[Meta].Meta()
+		meta.Magic = TreeMagic
 		meta.Version = TreeVersion
 		meta.Root = base + Root
 		meta.EndSentinel = base + End
-		meta.RendSentinel = base + Rend
 
 		pages[Root].Init(PageTypeLeaf)
+		leaf := pages[Root].Leaf()
+		leaf.Next = base + End
 
 		pages[End].Init(PageTypeLeaf)
-
-		pages[Rend].Init(PageTypeLeaf)
 
 		if _, err := t.Pager.WritePagesAt(pages[:], base); err != nil {
 			return nil, fmt.Errorf("failed to write initial pages: %v", err)
 		}
 
+		t.Meta.Magic = meta.Magic
 		t.Meta.Version = meta.Version
 		t.Meta.Root = meta.Root
 		t.Meta.EndSentinel = meta.EndSentinel
-		t.Meta.RendSentinel = meta.RendSentinel
+	}
+
+	if t.Meta.Magic != TreeMagic {
+		return nil, fmt.Errorf("wrong tree magic: %d != %d", TreeMagic, t.Meta.Magic)
 	}
 
 	return &t, nil
 
+}
+
+func (it *TreeForwardIterator) Next() bool {
+	it.Current++
+	if it.Current >= int(it.Leaf.N) {
+		if it.Leaf.Next == it.Meta.EndSentinel {
+			return false
+		}
+		if _, err := it.ReadPageAt(it.Leaf.Page(), it.Leaf.Next); err != nil {
+			return false
+		}
+		it.Current = 0
+	}
+	return true
+}
+
+func (it *TreeForwardIterator) Key() []byte {
+	return it.Leaf.GetKeyAt(it.Current)
+}
+
+func (it *TreeForwardIterator) Value() []byte {
+	return it.Leaf.GetValueAt(it.Current)
 }
 
 func (t *Tree) ReadPageAt(page *Page, index int64) (int64, error) {
@@ -105,6 +137,32 @@ func (t *Tree) ReadPageAt(page *Page, index int64) (int64, error) {
 
 func (t *Tree) WritePageAt(page *Page, index int64) (int64, error) {
 	return t.Pager.WritePagesAt(Page2Slice(page), index)
+}
+
+func (t *Tree) Begin() (*TreeForwardIterator, error) {
+	var it TreeForwardIterator
+	var page Page
+
+	it.Tree = t
+
+	index := t.Meta.Root
+	for index != 0 {
+		if _, err := t.ReadPageAt(&page, index); err != nil {
+			return nil, fmt.Errorf("failed to read page: %v", err)
+		}
+
+		switch page.Type() {
+		case PageTypeNode:
+			node := page.Node()
+			index = node.GetChildAt(-1)
+		case PageTypeLeaf:
+			it.Current = -1
+			it.Leaf = *page.Leaf()
+			return &it, nil
+		}
+	}
+
+	panic("unreachable")
 }
 
 func (t *Tree) Get(key []byte) ([]byte, error) {
@@ -272,34 +330,35 @@ forIndex:
 	}
 
 	/* Split leaf into two. */
-	var newLeaf Page
-	newLeaf.Init(PageTypeLeaf)
-
+	var newLeaf Leaf
+	newLeaf.Page().Init(PageTypeLeaf)
 	newBuffer := make([]byte, PageSize)
 
 	half := int(leaf.N) / 2
 	if pos < half-1 {
-		leaf.MoveData(newLeaf.Leaf(), 0, half-1, -1)
+		leaf.MoveData(&newLeaf, 0, half-1, -1)
 		if ok {
 			leaf.SetValueAt(value, pos)
 		} else {
 			leaf.InsertKeyValueAt(key, value, pos+1)
 		}
 	} else {
-		leaf.MoveData(newLeaf.Leaf(), 0, half, -1)
+		leaf.MoveData(&newLeaf, 0, half, -1)
 		if ok {
-			newLeaf.Leaf().SetValueAt(value, pos-half)
+			newLeaf.SetValueAt(value, pos-half)
 		} else {
-			newLeaf.Leaf().InsertKeyValueAt(key, value, pos+1-half)
+			newLeaf.InsertKeyValueAt(key, value, pos+1-half)
 		}
 	}
 
-	newKey := duplicate(newBuffer, newLeaf.Leaf().GetKeyAt(0))
-	newPage, err := t.WritePageAt(&newLeaf, -1)
+	newLeaf.Next = leaf.Next
+	newKey := duplicate(newBuffer, newLeaf.GetKeyAt(0))
+	newPage, err := t.WritePageAt(newLeaf.Page(), -1)
 	if err != nil {
 		return fmt.Errorf("failed to write new leaf: %v", err)
 	}
 
+	leaf.Next = newPage
 	if _, err = t.WritePageAt(&page, index); err != nil {
 		return fmt.Errorf("failed to write updated leaf: %v", err)
 	}

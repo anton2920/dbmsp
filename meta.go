@@ -5,11 +5,11 @@ import "unsafe"
 type Meta struct {
 	PageHeader
 
+	Magic   int64
 	Version int64
 
-	Root         int64
-	EndSentinel  int64
-	RendSentinel int64
+	Root        int64
+	EndSentinel int64
 
 	_ [PageSize - PageHeaderSize - 4*unsafe.Sizeof(int64(0))]byte
 }
